@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box;}
+    body{margin:0;background:#dcd7e6;font-family:'Roboto',sans-serif;}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    @keyframes blink{0%,50%{opacity:1}50.01%,100%{opacity:0}}
+    .scrollable::-webkit-scrollbar{width:0;height:0}
+    .scrollable{scrollbar-width:none;}
+  </style>
+</helmet>
+<div style="min-height:100vh;background:#dcd7e6;display:flex;align-items:center;justify-content:center;font-family:'Roboto',sans-serif;color:rgba(0,0,0,.87);">
+  <div style="position:relative;width:100%;max-width:412px;height:880px;max-height:100vh;background:#fff;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 16px 50px rgba(0,0,0,.3);">
+
+   <!-- ============ CONNECT ============ -->
+   <sc-if value="{{ isConnect }}" hint-placeholder-val="{{ true }}">
+    <div style="position:absolute;inset:0;display:flex;flex-direction:column;background:#fff;">
+      <div style="height:56px;background:#5E35B1;color:#fff;display:flex;align-items:center;padding:0 16px;flex:none;box-shadow:0 2px 4px rgba(0,0,0,.2);">
+        <span style="font-family:'Material Icons';font-size:24px;margin-right:24px;">memory</span>
+        <span style="font-size:20px;font-weight:500;letter-spacing:.15px;">llama chat</span>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:28px 24px 44px;">
+        <div style="text-align:center;margin-bottom:28px;">
+          <div style="width:84px;height:84px;border-radius:50%;background:#ede7f6;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;"><span style="font-family:'Material Icons';font-size:42px;color:#5E35B1;">dns</span></div>
+          <div style="font-size:21px;font-weight:500;">Connect to server</div>
+          <div style="font-size:14px;color:rgba(0,0,0,.6);margin-top:4px;">Enter your llama-server address</div>
+        </div>
+        <div style="background:#f4f2f8;border-radius:4px 4px 0 0;border-bottom:2px solid #5E35B1;padding:7px 12px 6px;margin-bottom:16px;">
+          <div style="font-size:12px;color:#5E35B1;font-weight:500;">Server IP address</div>
+          <input value="{{ ip }}" onInput="{{ setIp }}" placeholder="192.168.1.10" style="border:none;background:transparent;outline:none;width:100%;font-size:16px;color:rgba(0,0,0,.87);font-family:'Roboto';padding:3px 0 0;"/>
+        </div>
+        <div style="background:#f4f2f8;border-radius:4px 4px 0 0;border-bottom:2px solid #5E35B1;padding:7px 12px 6px;margin-bottom:24px;">
+          <div style="font-size:12px;color:#5E35B1;font-weight:500;">Port</div>
+          <input value="{{ port }}" onInput="{{ setPort }}" placeholder="8080" style="border:none;background:transparent;outline:none;width:100%;font-size:16px;color:rgba(0,0,0,.87);font-family:'Roboto';padding:3px 0 0;"/>
+        </div>
+        <button onClick="{{ connect }}" style="width:100%;height:46px;background:#5E35B1;color:#fff;border:none;border-radius:4px;font-family:'Roboto';font-size:14px;font-weight:500;letter-spacing:.9px;text-transform:uppercase;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;gap:10px;" style-hover="background:#5128a0;">
+          <sc-if value="{{ connecting }}" hint-placeholder-val="{{ false }}"><span style="width:18px;height:18px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;display:inline-block;animation:spin .7s linear infinite;"></span></sc-if>
+          <span>{{ connectLabel }}</span>
+        </button>
+        <sc-if value="{{ hasError }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top:14px;color:#c62828;font-size:13px;display:flex;align-items:center;gap:6px;justify-content:center;"><span style="font-family:'Material Icons';font-size:16px;">error_outline</span><span>{{ connectError }}</span></div>
+        </sc-if>
+      </div>
+    </div>
+   </sc-if>
+
+   <!-- ============ HOME ============ -->
+   <sc-if value="{{ isHome }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;display:flex;flex-direction:column;background:#fff;">
+      <div style="background:#5E35B1;color:#fff;flex:none;box-shadow:0 2px 4px rgba(0,0,0,.2);">
+        <div style="height:56px;display:flex;align-items:center;padding:0 6px 0 16px;">
+          <span style="font-size:20px;font-weight:500;letter-spacing:.15px;flex:1;">Conversations</span>
+          <button onClick="{{ disconnect }}" style="width:40px;height:40px;border-radius:50%;border:none;background:transparent;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;" style-hover="background:rgba(255,255,255,.15);"><span style="font-family:'Material Icons';font-size:22px;">link_off</span></button>
+        </div>
+      </div>
+      <div style="position:relative;flex:none;z-index:10;padding:12px 16px 10px;border-bottom:1px solid rgba(0,0,0,.08);">
+        <div onClick="{{ toggleModelMenu }}" style="display:flex;align-items:center;background:#f4f2f8;border:1px solid rgba(0,0,0,.12);border-radius:6px;padding:8px 12px;cursor:pointer;gap:10px;">
+          <span style="font-family:'Material Icons';font-size:20px;color:#5E35B1;">memory</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:11px;color:rgba(0,0,0,.55);">Model</div>
+            <div style="font-size:14px;color:rgba(0,0,0,.87);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ currentModelShort }}</div>
+          </div>
+          <span style="font-family:'Material Icons';font-size:22px;color:rgba(0,0,0,.5);">arrow_drop_down</span>
+        </div>
+        <sc-if value="{{ modelMenuOpen }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;left:16px;right:16px;top:62px;background:#fff;border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,.22);z-index:50;overflow:hidden;border:1px solid rgba(0,0,0,.08);">
+            <sc-for list="{{ models }}" as="m" hint-placeholder-count="3">
+              <div onClick="{{ m.select }}" style="padding:11px 14px;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid rgba(0,0,0,.05);" style-hover="background:#f4f2f8;">
+                <span style="font-family:'Material Icons';font-size:18px;color:#5E35B1;visibility:{{ m.checkVis }};">check</span>
+                <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ m.name }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+      <div class="scrollable" style="flex:1;overflow-y:auto;">
+        <sc-if value="{{ hasConversations }}" hint-placeholder-val="{{ true }}">
+          <sc-for list="{{ conversations }}" as="c" hint-placeholder-count="4">
+            <div onClick="{{ c.open }}" style="display:flex;align-items:center;gap:14px;padding:12px 16px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.06);" style-hover="background:#faf9fc;">
+              <div style="width:42px;height:42px;border-radius:50%;background:{{ c.color }};color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:500;flex:none;">{{ c.initial }}</div>
+              <div style="flex:1;min-width:0;">
+                <div style="display:flex;align-items:baseline;gap:8px;"><span style="font-size:15px;font-weight:500;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ c.title }}</span><span style="font-size:12px;color:rgba(0,0,0,.45);flex:none;">{{ c.time }}</span></div>
+                <div style="display:flex;align-items:center;gap:5px;margin-top:2px;"><span style="font-family:'Material Icons';font-size:13px;color:#5E35B1;">person</span><span style="font-size:12.5px;color:#5E35B1;font-weight:500;white-space:nowrap;">{{ c.charName }}</span></div>
+                <div style="font-size:13px;color:rgba(0,0,0,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;">{{ c.preview }}</div>
+              </div>
+            </div>
+          </sc-for>
+        </sc-if>
+        <sc-if value="{{ noConversations }}" hint-placeholder-val="{{ false }}">
+          <div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center;">
+            <span style="font-family:'Material Icons';font-size:64px;color:#d6cdec;">forum</span>
+            <div style="font-size:16px;font-weight:500;color:rgba(0,0,0,.6);margin-top:12px;">No conversations yet</div>
+            <div style="font-size:13px;color:rgba(0,0,0,.45);margin-top:4px;">Tap the + button to start chatting</div>
+          </div>
+        </sc-if>
+      </div>
+      <button onClick="{{ goNew }}" style="position:absolute;right:18px;bottom:18px;width:56px;height:56px;border-radius:50%;background:#5E35B1;color:#fff;border:none;box-shadow:0 5px 12px rgba(94,53,177,.45);cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:15;" style-hover="background:#5128a0;"><span style="font-family:'Material Icons';font-size:28px;">add</span></button>
+    </div>
+   </sc-if>
+
+   <!-- ============ NEW CONVERSATION ============ -->
+   <sc-if value="{{ isNew }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;display:flex;flex-direction:column;background:#fff;">
+      <div style="height:56px;background:#5E35B1;color:#fff;display:flex;align-items:center;padding:0 8px;flex:none;box-shadow:0 2px 4px rgba(0,0,0,.2);">
+        <button onClick="{{ backHome }}" style="width:40px;height:40px;border:none;background:transparent;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:50%;" style-hover="background:rgba(255,255,255,.15);"><span style="font-family:'Material Icons';font-size:24px;">arrow_back</span></button>
+        <span style="font-size:20px;font-weight:500;margin-left:12px;">{{ newHeaderTitle }}</span>
+      </div>
+      <div class="scrollable" style="flex:1;overflow-y:auto;padding:20px 16px 96px;">
+        <div style="font-size:12px;color:#5E35B1;font-weight:500;margin-bottom:6px;letter-spacing:.3px;">TITLE</div>
+        <div style="background:#f4f2f8;border-radius:4px 4px 0 0;border-bottom:2px solid #5E35B1;padding:7px 12px 6px;margin-bottom:22px;">
+          <input value="{{ newTitle }}" onInput="{{ setNewTitle }}" placeholder="Untitled conversation" style="border:none;background:transparent;outline:none;width:100%;font-size:16px;color:rgba(0,0,0,.87);font-family:'Roboto';padding:2px 0;"/>
+        </div>
+        <div style="font-size:12px;color:#5E35B1;font-weight:500;margin-bottom:6px;letter-spacing:.3px;">CHARACTER</div>
+        <div style="position:relative;z-index:12;">
+          <div onClick="{{ toggleCharMenu }}" style="display:flex;align-items:center;background:#f4f2f8;border:1px solid rgba(0,0,0,.12);border-radius:6px;padding:10px 12px;cursor:pointer;gap:12px;">
+            <div style="width:36px;height:36px;border-radius:50%;background:{{ selCharColor }};color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:500;flex:none;">{{ selCharInitial }}</div>
+            <div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;">{{ selCharName }}</div><div style="font-size:12px;color:rgba(0,0,0,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ selCharDesc }}</div></div>
+            <span style="font-family:'Material Icons';font-size:22px;color:rgba(0,0,0,.5);">arrow_drop_down</span>
+          </div>
+          <sc-if value="{{ charMenuOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;left:0;right:0;top:60px;background:#fff;border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,.22);z-index:50;overflow:hidden;border:1px solid rgba(0,0,0,.08);">
+              <sc-for list="{{ characters }}" as="c" hint-placeholder-count="4">
+                <div onClick="{{ c.select }}" style="display:flex;align-items:center;gap:12px;padding:10px 12px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.05);" style-hover="background:#f4f2f8;">
+                  <div style="width:32px;height:32px;border-radius:50%;background:{{ c.color }};color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:500;flex:none;">{{ c.initial }}</div>
+                  <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;">{{ c.name }}</div><div style="font-size:12px;color:rgba(0,0,0,.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ c.desc }}</div></div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="font-size:12px;color:#5E35B1;font-weight:500;margin:22px 0 6px;letter-spacing:.3px;">PARAMETER PRESET</div>
+        <div style="position:relative;z-index:11;">
+          <div onClick="{{ togglePresetMenu }}" style="display:flex;align-items:center;background:#f4f2f8;border:1px solid rgba(0,0,0,.12);border-radius:6px;padding:12px;cursor:pointer;gap:10px;">
+            <span style="font-family:'Material Icons';font-size:20px;color:#5E35B1;">tune</span>
+            <span style="flex:1;font-size:15px;font-weight:500;">{{ selPresetName }}</span>
+            <span style="font-family:'Material Icons';font-size:22px;color:rgba(0,0,0,.5);">arrow_drop_down</span>
+          </div>
+          <sc-if value="{{ presetMenuOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;left:0;right:0;top:54px;background:#fff;border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,.22);z-index:50;overflow:hidden;border:1px solid rgba(0,0,0,.08);">
+              <sc-for list="{{ presets }}" as="p" hint-placeholder-count="5">
+                <div onClick="{{ p.select }}" style="padding:11px 14px;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid rgba(0,0,0,.05);" style-hover="background:#f4f2f8;">
+                  <span style="font-family:'Material Icons';font-size:18px;color:#5E35B1;visibility:{{ p.checkVis }};">check</span><span>{{ p.name }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
+          <sc-for list="{{ presetParams }}" as="p" hint-placeholder-count="4">
+            <div style="background:#ede7f6;border-radius:14px;padding:5px 12px;font-size:12px;color:#4527A0;"><span style="opacity:.7;">{{ p.k }}</span> <span style="font-weight:600;">{{ p.v }}</span></div>
+          </sc-for>
+        </div>
+
+        <div style="font-size:12px;color:#5E35B1;font-weight:500;margin:22px 0 6px;letter-spacing:.3px;">MODEL</div>
+        <div style="display:flex;align-items:center;gap:10px;background:#faf9fc;border:1px solid rgba(0,0,0,.08);border-radius:6px;padding:10px 12px;">
+          <span style="font-family:'Material Icons';font-size:20px;color:rgba(0,0,0,.45);">memory</span>
+          <span style="font-size:13px;color:rgba(0,0,0,.7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ newModelShort }}</span>
+        </div>
+      </div>
+      <div style="position:absolute;left:0;right:0;bottom:0;padding:12px 16px;background:#fff;border-top:1px solid rgba(0,0,0,.08);">
+        <button onClick="{{ startChat }}" style="width:100%;height:46px;background:#5E35B1;color:#fff;border:none;border-radius:4px;font-size:14px;font-weight:500;letter-spacing:.9px;text-transform:uppercase;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,.25);" style-hover="background:#5128a0;">{{ startLabel }}</button>
+      </div>
+    </div>
+   </sc-if>
+
+   <!-- ============ CHAT ============ -->
+   <sc-if value="{{ isChat }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;display:flex;flex-direction:column;background:#fff;">
+      <div style="background:#5E35B1;color:#fff;flex:none;box-shadow:0 2px 4px rgba(0,0,0,.2);position:relative;z-index:12;">
+        <div style="height:56px;display:flex;align-items:center;padding:0 6px;">
+          <button onClick="{{ backHome }}" style="width:40px;height:40px;border:none;background:transparent;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:50%;" style-hover="background:rgba(255,255,255,.15);"><span style="font-family:'Material Icons';font-size:24px;">arrow_back</span></button>
+          <div style="width:34px;height:34px;border-radius:50%;background:{{ activeCharColor }};color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:500;margin:0 12px 0 4px;flex:none;border:2px solid rgba(255,255,255,.4);">{{ activeCharInitial }}</div>
+          <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ activeCharName }}</div><div style="font-size:11px;color:rgba(255,255,255,.75);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ activeModelShort }}</div></div>
+          <button onClick="{{ toggleChatMenu }}" style="width:40px;height:40px;border:none;background:transparent;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:50%;" style-hover="background:rgba(255,255,255,.15);"><span style="font-family:'Material Icons';font-size:22px;">more_vert</span></button>
+        </div>
+        <sc-if value="{{ chatMenuOpen }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;right:8px;top:50px;background:#fff;color:rgba(0,0,0,.87);border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,.25);z-index:50;overflow:hidden;min-width:200px;">
+            <div onClick="{{ editDetails }}" style="padding:12px 16px;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:12px;" style-hover="background:#f4f2f8;"><span style="font-family:'Material Icons';font-size:19px;color:rgba(0,0,0,.55);">edit_note</span>Edit chat details</div>
+            <div onClick="{{ regenerate }}" style="padding:12px 16px;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:12px;" style-hover="background:#f4f2f8;"><span style="font-family:'Material Icons';font-size:19px;color:rgba(0,0,0,.55);">refresh</span>Regenerate reply</div>
+            <div onClick="{{ clearMessages }}" style="padding:12px 16px;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:12px;" style-hover="background:#f4f2f8;"><span style="font-family:'Material Icons';font-size:19px;color:rgba(0,0,0,.55);">delete_sweep</span>Clear messages</div>
+            <div onClick="{{ deleteConv }}" style="padding:12px 16px;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:12px;color:#c62828;" style-hover="background:#fdecea;"><span style="font-family:'Material Icons';font-size:19px;">delete</span>Delete conversation</div>
+          </div>
+        </sc-if>
+      </div>
+
+      <div ref="{{ msgRef }}" class="scrollable" style="flex:1;overflow-y:auto;padding:16px 14px 8px;background:#fff;">
+        <sc-if value="{{ hasMessages }}" hint-placeholder-val="{{ false }}">
+          <sc-for list="{{ messages }}" as="m" hint-placeholder-count="0">
+            <div style="{{ m.rowStyle }}">
+              <div style="{{ m.colStyle }}">
+                <sc-if value="{{ m.editing }}" hint-placeholder-val="{{ false }}">
+                  <div style="width:100%;background:#f4f2f8;border:1px solid #5E35B1;border-radius:10px;padding:8px;">
+                    <textarea ref="{{ editRef }}" value="{{ editText }}" onInput="{{ setEditText }}" rows="3" style="width:100%;border:none;background:transparent;outline:none;resize:none;font-family:'Roboto';font-size:15px;color:rgba(0,0,0,.87);line-height:1.5;max-height:calc(80vh - 64px);overflow-y:auto;"></textarea>
+                    <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:4px;">
+                      <button onClick="{{ cancelEdit }}" style="border:none;background:transparent;color:rgba(0,0,0,.55);font-size:12px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;padding:6px 10px;cursor:pointer;border-radius:4px;">Cancel</button>
+                      <button onClick="{{ saveEdit }}" style="border:none;background:transparent;color:#5E35B1;font-size:12px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;padding:6px 10px;cursor:pointer;border-radius:4px;">Save</button>
+                    </div>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ m.notEditing }}" hint-placeholder-val="{{ true }}">
+                  <div onClick="{{ m.onTap }}" style="{{ m.bubbleStyle }}">
+                    <div dangerouslySetInnerHTML="{{ m.html }}"></div>
+                    <sc-if value="{{ m.caret }}" hint-placeholder-val="{{ false }}"><span style="display:inline-block;width:7px;height:15px;background:#5E35B1;margin-left:1px;vertical-align:-2px;animation:blink 1s steps(1) infinite;"></span></sc-if>
+                  </div>
+                  <sc-if value="{{ m.hasVariants }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex;align-items:center;gap:2px;margin-top:4px;">
+                      <button onClick="{{ m.prevVariant }}" disabled="{{ m.prevDisabled }}" style="border:none;background:transparent;color:rgba(0,0,0,.55);width:26px;height:26px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;" style-hover="background:#f4f2f8;"><span style="font-family:'Material Icons';font-size:18px;">chevron_left</span></button>
+                      <span style="font-size:12px;color:rgba(0,0,0,.5);min-width:36px;text-align:center;">{{ m.variantLabel }}</span>
+                      <button onClick="{{ m.nextVariant }}" disabled="{{ m.nextDisabled }}" style="border:none;background:transparent;color:rgba(0,0,0,.55);width:26px;height:26px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;" style-hover="background:#f4f2f8;"><span style="font-family:'Material Icons';font-size:18px;">chevron_right</span></button>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ m.selected }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex;gap:6px;margin-top:5px;flex-wrap:wrap;">
+                      <button onClick="{{ m.startEdit }}" style="border:none;background:#f4f2f8;color:rgba(0,0,0,.6);border-radius:14px;padding:4px 10px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:4px;"><span style="font-family:'Material Icons';font-size:15px;">edit</span>Edit</button>
+                      <sc-if value="{{ m.isLastAssistant }}" hint-placeholder-val="{{ false }}"><button onClick="{{ m.continue }}" style="border:none;background:#f4f2f8;color:#5E35B1;border-radius:14px;padding:4px 10px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:4px;"><span style="font-family:'Material Icons';font-size:15px;">play_arrow</span>Continue</button></sc-if>
+                      <sc-if value="{{ m.isLastAssistant }}" hint-placeholder-val="{{ false }}"><button onClick="{{ m.del }}" style="border:none;background:#f4f2f8;color:#c62828;border-radius:14px;padding:4px 10px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:4px;"><span style="font-family:'Material Icons';font-size:15px;">delete</span>Delete</button></sc-if>
+                    </div>
+                  </sc-if>
+                </sc-if>
+              </div>
+            </div>
+          </sc-for>
+        </sc-if>
+        <sc-if value="{{ noMessages }}" hint-placeholder-val="{{ true }}">
+          <div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:rgba(0,0,0,.4);padding:30px;">
+            <div style="width:64px;height:64px;border-radius:50%;background:#ede7f6;display:flex;align-items:center;justify-content:center;"><span style="font-family:'Material Icons';font-size:32px;color:#5E35B1;">chat_bubble_outline</span></div>
+            <div style="font-size:15px;color:rgba(0,0,0,.6);margin-top:12px;">Say hello to {{ activeCharName }}</div>
+            <div style="font-size:13px;color:rgba(0,0,0,.4);margin-top:2px;">Your messages stay on this device</div>
+          </div>
+        </sc-if>
+      </div>
+
+      <sc-if value="{{ showActions }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;justify-content:flex-end;gap:8px;padding:4px 14px 8px;flex:none;">
+          <button onClick="{{ stop }}" style="{{ stopStyle }}"><span style="font-family:'Material Icons';font-size:17px;">stop</span>Stop</button>
+          <button onClick="{{ regenerate }}" style="{{ regenStyle }}"><span style="font-family:'Material Icons';font-size:17px;">refresh</span>Regenerate</button>
+        </div>
+      </sc-if>
+
+      <div style="flex:none;display:flex;align-items:flex-end;gap:8px;padding:8px 10px 10px;border-top:1px solid rgba(0,0,0,.08);">
+        <div style="flex:1;background:#f4f2f8;border-radius:22px;padding:8px 16px;display:flex;align-items:center;">
+          <textarea ref="{{ inputRef }}" value="{{ input }}" onInput="{{ setInput }}" onKeyDown="{{ onInputKey }}" rows="1" placeholder="Message…" style="border:none;background:transparent;outline:none;width:100%;font-family:'Roboto';font-size:15px;line-height:1.4;color:rgba(0,0,0,.87);resize:none;max-height:50vh;overflow-y:hidden;display:block;"></textarea>
+        </div>
+        <button onClick="{{ send }}" disabled="{{ sendDisabled }}" style="{{ sendBtnStyle }}"><span style="font-family:'Material Icons';font-size:22px;">send</span></button>
+      </div>
+    </div>
+   </sc-if>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:412,&quot;height&quot;:880},&quot;density&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Comfortable&quot;,&quot;Compact&quot;],&quot;default&quot;:&quot;Compact&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;bothBubbles&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  constructor(props){
+    super(props);
+    this._id = 1000;
+    this._reIdx = 0;
+    this.characters = [
+      {name:'Assistant',desc:'Helpful, concise general assistant.',color:'#5E35B1'},
+      {name:'Default',desc:'Neutral. No system persona.',color:'#7E57C2'},
+      {name:'Coding Helper',desc:'Senior engineer. Explains with code.',color:'#4527A0'},
+      {name:'Storyteller',desc:'Vivid, imaginative narrator.',color:'#8E24AA'},
+      {name:'Marcus',desc:'Stoic philosopher. Calm, thoughtful.',color:'#5C6BC0'},
+    ];
+    this.presets = [
+      {name:'Default',temp:0.7,top_p:0.9,top_k:20,rep:1.15},
+      {name:'Precise',temp:0.1,top_p:0.1,top_k:40,rep:1.18},
+      {name:'Creative',temp:1.1,top_p:0.95,top_k:100,rep:1.10},
+      {name:'Llama-Precise',temp:0.7,top_p:0.1,top_k:40,rep:1.18},
+      {name:'Midnight Enigma',temp:0.98,top_p:0.37,top_k:100,rep:1.18},
+    ];
+    this.models = [
+      'Llama-3.1-8B-Instruct.Q5_K_M.gguf',
+      'Mistral-7B-Instruct-v0.3.Q4_K_M.gguf',
+      'Qwen2.5-14B-Instruct.Q4_K_M.gguf',
+      'gemma-2-9b-it.Q5_K_M.gguf',
+      'Phi-3.5-mini-instruct.Q6_K.gguf',
+    ];
+    this.replies = [
+      "Here's a clean approach:\n\n```js\nconst id = setInterval(tick, 1000);\nreturn () => clearInterval(id);\n```\n\nThe cleanup runs on **unmount**, so nothing leaks. Keep the dependency array honest and you're set.",
+      "Good question — the essentials:\n\n- Start with the **simplest** thing that works\n- Measure *before* you optimize\n- Keep side effects at the edges\n\nWant me to go deeper on any of these?",
+      "Absolutely. The core idea is to separate what's *in your control* from what isn't, then spend your energy only where it actually lands.",
+    ];
+    this.continuations = [
+      "To build on that:\n\n- Double-check the edge cases\n- Add a quick test to lock the behavior in\n\nThat should keep things robust.",
+      "In short: keep it simple, measure, and iterate from there.",
+      "Let me know if you'd like a concrete example to go with this.",
+    ];
+    this._contIdx = 0;
+    this.state = {
+      screen:'connect',
+      ip:'192.168.1.42', port:'8080',
+      connecting:false, connectError:'',
+      currentModel:this.models[0],
+      openMenu:null,
+      newCharacter:'Assistant', newPreset:'Default', newTitle:'', newModel:this.models[0], editingConvId:null,
+      activeId:null,
+      input:'',
+      streaming:false,
+      selectedMsgId:null,
+      editingMsgId:null, editText:'',
+      conversations:this.seed(),
+    };
+  }
+
+  seed(){
+    return [
+      {id:1, character:'Coding Helper', preset:'Precise', model:this.models[0], title:'useEffect cleanup pattern', time:'2h', messages:[
+        {id:11, role:'user', text:'How do I clean up a setInterval inside useEffect?'},
+        {id:12, role:'assistant', text:this.replies[0]},
+      ]},
+      {id:2, character:'Assistant', preset:'Default', model:this.models[1], title:"Sourdough won't rise", time:'Yesterday', messages:[
+        {id:21, role:'user', text:"My sourdough isn't rising overnight. What am I doing wrong?"},
+        {id:22, role:'assistant', text:"A few likely culprits:\n\n- Your **starter** may be underfed or sluggish\n- The room is probably too *cold* for a long proof\n- Too much salt added early can stall fermentation\n\nTry a warmer spot (24-26°C) and a peppier starter."},
+      ]},
+      {id:3, character:'Assistant', preset:'Creative', model:this.models[2], title:'Kyoto 4-day itinerary', time:'Mon', messages:[
+        {id:31, role:'user', text:'Plan a compact 4-day Kyoto trip.'},
+        {id:32, role:'assistant', text:"Here's a compact plan:\n\n- **Day 1** Higashiyama & Kiyomizu-dera\n- **Day 2** Arashiyama bamboo grove\n- **Day 3** Fushimi Inari at dawn\n- **Day 4** Nishiki Market & coffee\n\nWant restaurant picks?"},
+      ]},
+      {id:4, character:'Marcus', preset:'Midnight Enigma', model:this.models[0], title:'The dichotomy of control', time:'3d', messages:[
+        {id:41, role:'user', text:'Explain the stoic dichotomy of control.'},
+        {id:42, role:'assistant', text:this.replies[2]},
+      ]},
+    ];
+  }
+
+  nid(){ this._id += 1; return this._id; }
+  char(name){ return this.characters.find(c=>c.name===name) || this.characters[0]; }
+  preset(name){ return this.presets.find(p=>p.name===name) || this.presets[0]; }
+  shortModel(m){ return m ? m.replace(/\.gguf$/,'') : ''; }
+  esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  msgText(m){ const i=m.variant||0; if(m.variants) return m.variants[i]||''; return m.text||''; }
+  setMsgText(m,t){ const i=m.variant||0; if(m.variants){ m.variants[i]=t; } else { m.text=t; } }
+  autoGrow(el, maxVh){
+    if(!el) return;
+    const max = Math.round((window.innerHeight||880) * maxVh/100);
+    el.style.height='auto';
+    const h = Math.min(el.scrollHeight, max);
+    el.style.height = h+'px';
+    el.style.overflowY = el.scrollHeight>max ? 'auto' : 'hidden';
+  }
+
+  inline(s){
+    return s
+      .replace(/`([^`]+)`/g, (m,p)=>`<code style="font-family:'Roboto Mono',monospace;font-size:13px;background:rgba(94,53,177,.10);color:#4527A0;padding:1px 5px;border-radius:4px;">${p}</code>`)
+      .replace(/\*\*([^*]+)\*\*/g, (m,p)=>`<strong style="font-weight:700;">${p}</strong>`)
+      .replace(/\*([^*]+)\*/g, (m,p)=>`<em>${p}</em>`);
+  }
+
+  md(src){
+    const lines = (src||'').split('\n');
+    let html=''; let i=0; let ul=false;
+    const closeUl = ()=>{ if(ul){ html+='</ul>'; ul=false; } };
+    while(i<lines.length){
+      const line = lines[i];
+      if(/^```/.test(line)){
+        closeUl(); i++; const code=[];
+        while(i<lines.length && !/^```/.test(lines[i])){ code.push(lines[i]); i++; }
+        i++;
+        html += `<pre style="margin:8px 0;background:#f4f2f8;border:1px solid rgba(0,0,0,.06);border-radius:8px;padding:12px;overflow-x:auto;"><code style="font-family:'Roboto Mono',monospace;font-size:13px;color:rgba(0,0,0,.85);white-space:pre;">${this.esc(code.join('\n'))}</code></pre>`;
+        continue;
+      }
+      if(/^\s*[-*]\s+/.test(line)){
+        if(!ul){ html+='<ul style="margin:4px 0;padding-left:20px;">'; ul=true; }
+        html += `<li style="margin:3px 0;">${this.inline(this.esc(line.replace(/^\s*[-*]\s+/,'')))}</li>`;
+        i++; continue;
+      }
+      if(line.trim()===''){ closeUl(); i++; continue; }
+      closeUl();
+      html += `<div style="margin:0 0 6px;">${this.inline(this.esc(line))}</div>`;
+      i++;
+    }
+    closeUl();
+    return html;
+  }
+
+  toggleMenu(name){ this.setState(s=>({openMenu: s.openMenu===name?null:name})); }
+  selectModel(m){ this.setState({currentModel:m, openMenu:null}); }
+
+  connect(){
+    if(!this.state.ip.trim()){ this.setState({connectError:'Enter a server IP address.'}); return; }
+    this.setState({connecting:true, connectError:''});
+    clearTimeout(this._ct);
+    this._ct = setTimeout(()=>{ this.setState({connecting:false, screen:'home'}); }, 1100);
+  }
+
+  goNew(){ this.setState({screen:'new', newCharacter:'Assistant', newPreset:'Default', newTitle:'', newModel:this.state.currentModel, editingConvId:null, openMenu:null}); }
+
+  editDetails(){
+    const conv = this.state.conversations.find(c=>c.id===this.state.activeId);
+    if(!conv) return;
+    this.setState({screen:'new', editingConvId:conv.id, newCharacter:conv.character, newPreset:conv.preset, newTitle:(conv.title==='New chat'?'':conv.title), newModel:conv.model, openMenu:null});
+  }
+
+  startChat(){
+    const st = this.state;
+    const title = st.newTitle.trim();
+    if(st.editingConvId){
+      this.setState(s=>({
+        conversations:s.conversations.map(c=> c.id===st.editingConvId ? {...c, character:st.newCharacter, preset:st.newPreset, model:st.newModel, title:(title||c.title)} : c),
+        screen:'chat', editingConvId:null, openMenu:null,
+      }));
+      return;
+    }
+    const id = this.nid();
+    const conv = {id, character:st.newCharacter, preset:st.newPreset, model:st.newModel, title:(title||'New chat'), time:'now', messages:[]};
+    this.setState(s=>({conversations:[conv, ...s.conversations], activeId:id, screen:'chat', input:'', selectedMsgId:null, openMenu:null}));
+  }
+
+  openConv(id){ this.setState({activeId:id, screen:'chat', selectedMsgId:null, openMenu:null}); }
+  toggleMsg(id){ this.setState(s=>({selectedMsgId: s.selectedMsgId===id?null:id})); }
+  startEdit(id, text){ this.setState({editingMsgId:id, editText:text, selectedMsgId:null}); }
+
+  updateConv(fn){
+    this.setState(s=>{
+      const conversations = s.conversations.map(c=>{
+        if(c.id!==s.activeId) return c;
+        const nc = {...c, messages:c.messages.slice()};
+        fn(nc);
+        return nc;
+      });
+      return {conversations};
+    });
+  }
+
+  saveEdit(){
+    const {editingMsgId, editText} = this.state;
+    this.updateConv(c=>{ const m=c.messages.find(x=>x.id===editingMsgId); if(m) this.setMsgText(m, editText); });
+    this.setState({editingMsgId:null, editText:''});
+  }
+  deleteMsg(id){ this.updateConv(c=>{ c.messages=c.messages.filter(x=>x.id!==id); }); this.setState({selectedMsgId:null}); }
+  deleteLastAssistant(){
+    const conv = this.state.conversations.find(c=>c.id===this.state.activeId);
+    if(!conv) return;
+    let ai=-1; for(let i=conv.messages.length-1;i>=0;i--){ if(conv.messages[i].role==='assistant'){ ai=i; break; } }
+    if(ai<0) return;
+    let ui=-1; for(let j=ai-1;j>=0;j--){ if(conv.messages[j].role==='user'){ ui=j; break; } }
+    const aId = conv.messages[ai].id;
+    const uId = ui>=0 ? conv.messages[ui].id : null;
+    const restore = ui>=0 ? (conv.messages[ui].text||'') : this.state.input;
+    this.updateConv(c=>{ c.messages = c.messages.filter(x=> x.id!==aId && x.id!==uId); });
+    this.setState({input:restore, selectedMsgId:null});
+    setTimeout(()=>{ if(this._inputEl) this.autoGrow(this._inputEl,50); }, 0);
+  }
+  clearMessages(){ this.updateConv(c=>{ c.messages=[]; }); this.setState({openMenu:null}); }
+  deleteConv(){
+    const id = this.state.activeId;
+    this.setState(s=>({conversations:s.conversations.filter(c=>c.id!==id), screen:'home', activeId:null, openMenu:null}));
+  }
+
+  send(){
+    const text = this.state.input.trim();
+    if(!text || this.state.streaming) return;
+    const uid = this.nid();
+    this.updateConv(c=>{
+      c.messages = c.messages.concat([{id:uid, role:'user', text}]);
+      if(c.title==='New chat'){ c.title = text.length>30 ? text.slice(0,30)+'…' : text; c.time='now'; }
+    });
+    this.setState({input:'', selectedMsgId:null});
+    setTimeout(()=>this.streamReply(), 220);
+  }
+
+  streamTo(aid, full, startPos){
+    this.setState({streaming:true, selectedMsgId:null});
+    let pos = startPos;
+    clearInterval(this._timer);
+    this._timer = setInterval(()=>{
+      pos += 3;
+      const slice = full.slice(0, pos);
+      this.updateConv(c=>{ const m=c.messages.find(x=>x.id===aid); if(m) this.setMsgText(m, slice); });
+      if(pos >= full.length){ clearInterval(this._timer); this.setState({streaming:false}); }
+    }, 24);
+  }
+  streamReply(){
+    const full = this.replies[this._reIdx % this.replies.length];
+    this._reIdx += 1;
+    const aid = this.nid();
+    this.updateConv(c=>{ c.messages = c.messages.concat([{id:aid, role:'assistant', variants:[''], variant:0}]); });
+    this.streamTo(aid, full, 0);
+  }
+  continueMsg(id){
+    if(this.state.streaming) return;
+    const conv = this.state.conversations.find(c=>c.id===this.state.activeId);
+    const m = conv && conv.messages.find(x=>x.id===id);
+    if(!m) return;
+    const add = this.continuations[this._contIdx % this.continuations.length];
+    this._contIdx += 1;
+    const base = this.msgText(m);
+    const full = base + '\n\n' + add;
+    this.streamTo(id, full, base.length);
+  }
+
+  stop(){ clearInterval(this._timer); this.setState({streaming:false}); }
+  addVariantAndStream(id){
+    if(this.state.streaming) return;
+    const full = this.replies[this._reIdx % this.replies.length];
+    this._reIdx += 1;
+    this.updateConv(c=>{
+      const m = c.messages.find(x=>x.id===id);
+      if(!m) return;
+      if(!m.variants){ m.variants = [m.text!==undefined ? m.text : '']; }
+      m.variants = m.variants.concat(['']);
+      m.variant = m.variants.length - 1;
+    });
+    this.setState({openMenu:null, selectedMsgId:null});
+    this.streamTo(id, full, 0);
+  }
+  regenerate(){
+    if(this.state.streaming) return;
+    const conv = this.state.conversations.find(c=>c.id===this.state.activeId);
+    if(!conv) return;
+    let id = null;
+    for(let i=conv.messages.length-1; i>=0; i--){ if(conv.messages[i].role==='assistant'){ id=conv.messages[i].id; break; } }
+    if(id!=null) this.addVariantAndStream(id);
+  }
+  prevVariant(id){ this.updateConv(c=>{ const m=c.messages.find(x=>x.id===id); if(m && m.variants){ m.variant = Math.max(0,(m.variant||0)-1); } }); this.setState({selectedMsgId:null}); }
+  nextVariant(id){ this.updateConv(c=>{ const m=c.messages.find(x=>x.id===id); if(m && m.variants){ m.variant = Math.min(m.variants.length-1,(m.variant||0)+1); } }); this.setState({selectedMsgId:null}); }
+
+  componentDidUpdate(){
+    if(this.state.screen==='chat' && this._msgEl){ this._msgEl.scrollTop = this._msgEl.scrollHeight; }
+    if(this._inputEl && this.state.input===''){ this._inputEl.style.height='auto'; this._inputEl.style.overflowY='hidden'; }
+  }
+  componentWillUnmount(){ clearInterval(this._timer); clearTimeout(this._ct); }
+
+  renderVals(){
+    const st = this.state;
+    const compact = (this.props.density ?? 'Compact')==='Compact';
+    const both = this.props.bothBubbles ?? false;
+    const gap = compact ? 10 : 16;
+    const pad = compact ? '8px 12px' : '10px 14px';
+
+    const models = this.models.map(m=>({name:m, checkVis:(m===st.currentModel?'visible':'hidden'), select:()=>this.selectModel(m)}));
+    const characters = this.characters.map(c=>({name:c.name, desc:c.desc, color:c.color, initial:c.name[0], select:()=>this.setState({newCharacter:c.name, openMenu:null})}));
+    const presets = this.presets.map(p=>({name:p.name, checkVis:(p.name===st.newPreset?'visible':'hidden'), select:()=>this.setState({newPreset:p.name, openMenu:null})}));
+
+    const selChar = this.char(st.newCharacter);
+    const selPreset = this.preset(st.newPreset);
+    const presetParams = [
+      {k:'temperature', v:selPreset.temp},
+      {k:'top_p', v:selPreset.top_p},
+      {k:'top_k', v:selPreset.top_k},
+      {k:'rep_pen', v:selPreset.rep},
+    ];
+
+    const conversations = st.conversations.map(c=>{
+      const last = c.messages[c.messages.length-1];
+      const ch = this.char(c.character);
+      let preview = last ? (last.role==='user'?'You: ':'') + this.msgText(last).replace(/[`*#\n]/g,' ').replace(/\s+/g,' ').trim() : 'No messages yet';
+      if(preview.length>54) preview = preview.slice(0,54)+'…';
+      return {id:c.id, title:c.title, charName:c.character, preview, time:c.time, color:ch.color, initial:c.character[0], open:()=>this.openConv(c.id)};
+    });
+
+    const conv = st.conversations.find(c=>c.id===st.activeId);
+    let activeChar=null, activeModelShort='', messages=[], canRegen=false, lastIsAssistant=false;
+    if(conv){
+      activeChar = this.char(conv.character);
+      activeModelShort = this.shortModel(conv.model);
+      const lastIdx = conv.messages.length-1;
+      let lastAssistantIdx = -1;
+      for(let i=conv.messages.length-1; i>=0; i--){ if(conv.messages[i].role==='assistant'){ lastAssistantIdx=i; break; } }
+      messages = conv.messages.map((m, idx)=>{
+        const isUser = m.role==='user';
+        const editing = st.editingMsgId===m.id;
+        const text = this.msgText(m);
+        const nv = m.variants ? m.variants.length : 1;
+        const vi = m.variant || 0;
+        let bg = isUser ? '#ede7f6' : (both ? '#f4f2f8' : 'transparent');
+        const bubbleStyle = {
+          background:bg, color:'rgba(0,0,0,.87)',
+          padding:(isUser||both) ? pad : '2px 0',
+          borderRadius: isUser ? '16px 16px 4px 16px' : (both ? '4px 16px 16px 16px' : '0'),
+          fontSize:'15px', lineHeight:'1.55', cursor:'pointer', wordBreak:'break-word', maxWidth:'100%',
+        };
+        return {
+          id:m.id, isUser, isAssistant:!isUser, editing, notEditing:!editing,
+          continue:()=>this.continueMsg(m.id),
+          html:{__html:this.md(text)},
+          rowStyle: editing ? {display:'flex', marginBottom:gap+'px', width:'100%'} : {display:'flex', justifyContent:isUser?'flex-end':'flex-start', marginBottom:gap+'px'},
+          colStyle: editing ? {display:'flex', flexDirection:'column', width:'100%', maxWidth:'100%', alignItems:'stretch'} : {display:'flex', flexDirection:'column', maxWidth:'86%', alignItems:isUser?'flex-end':'flex-start'},
+          alignItems:isUser?'flex-end':'flex-start',
+          bubbleStyle,
+          hasVariants: !isUser && nv>1,
+          variantLabel: (vi+1)+' / '+nv,
+          prevDisabled: vi<=0,
+          nextDisabled: vi>=nv-1,
+          prevVariant:()=>this.prevVariant(m.id),
+          nextVariant:()=>this.nextVariant(m.id),
+          selected:st.selectedMsgId===m.id,
+          caret: st.streaming && !isUser && idx===lastIdx,
+          onTap:()=>this.toggleMsg(m.id),
+          startEdit:()=>this.startEdit(m.id, text),
+          isLastAssistant: idx===lastAssistantIdx,
+          del: (idx===lastAssistantIdx) ? ()=>this.deleteLastAssistant() : ()=>this.deleteMsg(m.id),
+        };
+      });
+      const last = conv.messages[conv.messages.length-1];
+      lastIsAssistant = !!last && last.role==='assistant';
+      canRegen = !st.streaming && lastIsAssistant;
+    }
+
+    const showActions = st.streaming || lastIsAssistant;
+    const stopDisabled = !st.streaming;
+    const regenDisabled = st.streaming || !lastIsAssistant;
+    const actBtn = {display:'flex',alignItems:'center',gap:'6px',borderRadius:'18px',padding:'7px 16px',fontSize:'13px',fontWeight:500,background:'#fff',boxShadow:'0 1px 3px rgba(0,0,0,.12)'};
+    const stopStyle = Object.assign({}, actBtn, {border:'1px solid rgba(0,0,0,.2)',color:'rgba(0,0,0,.75)',cursor:stopDisabled?'default':'pointer',opacity:stopDisabled?0.4:1,pointerEvents:stopDisabled?'none':'auto'});
+    const regenStyle = Object.assign({}, actBtn, {border:'1px solid #5E35B1',color:'#5E35B1',cursor:regenDisabled?'default':'pointer',opacity:regenDisabled?0.4:1,pointerEvents:regenDisabled?'none':'auto'});
+    const sendDisabled = !st.input.trim() || st.streaming;
+
+    return {
+      isConnect:st.screen==='connect', isHome:st.screen==='home', isNew:st.screen==='new', isChat:st.screen==='chat',
+      ip:st.ip, port:st.port, connecting:st.connecting, connectError:st.connectError, hasError:!!st.connectError,
+      connectLabel: st.connecting ? 'Connecting…' : 'Connect',
+      setIp:e=>this.setState({ip:e.target.value}),
+      setPort:e=>this.setState({port:e.target.value}),
+      connect:()=>this.connect(),
+      disconnect:()=>this.setState({screen:'connect', connectError:''}),
+
+      currentModelShort:this.shortModel(st.currentModel),
+      models, modelMenuOpen:st.openMenu==='model', toggleModelMenu:()=>this.toggleMenu('model'),
+
+      conversations, hasConversations:st.conversations.length>0, noConversations:st.conversations.length===0,
+      goNew:()=>this.goNew(),
+
+      characters, charMenuOpen:st.openMenu==='character', toggleCharMenu:()=>this.toggleMenu('character'),
+      selCharName:selChar.name, selCharDesc:selChar.desc, selCharColor:selChar.color, selCharInitial:selChar.name[0],
+      presets, presetMenuOpen:st.openMenu==='preset', togglePresetMenu:()=>this.toggleMenu('preset'),
+      selPresetName:selPreset.name, presetParams,
+      newModelShort:this.shortModel(st.newModel),
+      newTitle:st.newTitle, setNewTitle:e=>this.setState({newTitle:e.target.value}),
+      newHeaderTitle: st.editingConvId ? 'Edit details' : 'New conversation',
+      startLabel: st.editingConvId ? 'Save changes' : 'Start chat',
+      editDetails:()=>this.editDetails(),
+      backHome:()=>this.setState({screen:'home', openMenu:null}),
+      startChat:()=>this.startChat(),
+
+      activeCharName:activeChar?activeChar.name:'', activeCharColor:activeChar?activeChar.color:'#5E35B1', activeCharInitial:activeChar?activeChar.name[0]:'',
+      activeModelShort, messages, hasMessages:messages.length>0, noMessages:messages.length===0,
+      input:st.input, setInput:e=>{ this.autoGrow(e.target,50); this.setState({input:e.target.value}); }, inputRef:el=>{ this._inputEl=el; },
+      onInputKey:e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); this.send(); } },
+      send:()=>this.send(), sendDisabled,
+      sendBtnStyle:{width:'44px', height:'44px', flex:'none', borderRadius:'50%', border:'none', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', cursor:sendDisabled?'default':'pointer', background:sendDisabled?'#cfc7e3':'#5E35B1', boxShadow:sendDisabled?'none':'0 2px 5px rgba(94,53,177,.4)'},
+      streaming:st.streaming, canRegen, showActions, stopStyle, regenStyle,
+      stop:()=>this.stop(), regenerate:()=>this.regenerate(),
+      chatMenuOpen:st.openMenu==='chat', toggleChatMenu:()=>this.toggleMenu('chat'),
+      clearMessages:()=>this.clearMessages(), deleteConv:()=>this.deleteConv(),
+      editText:st.editText, setEditText:e=>{ this.autoGrow(e.target,78); this.setState({editText:e.target.value}); }, editRef:el=>{ this._editEl=el; if(el) this.autoGrow(el,78); },
+      saveEdit:()=>this.saveEdit(), cancelEdit:()=>this.setState({editingMsgId:null, editText:''}),
+      msgRef:el=>{ this._msgEl = el; },
+    };
+  }
+}
+</script>
+</body>
+</html>

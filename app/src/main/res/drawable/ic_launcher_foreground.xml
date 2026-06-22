@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive-icon foreground: a "memory"/chip glyph (mirrors the app's header icon)
+     drawn white, centered within the 108dp adaptive canvas safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:translateX="30" android:translateY="30" android:scaleX="2" android:scaleY="2">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M15,9L9,9L9,15L15,15L15,9ZM13,13L11,13L11,11L13,11L13,13ZM21,11L21,9L19,9L19,7C19,5.9 18.1,5 17,5L15,5L15,3L13,3L13,5L11,5L11,3L9,3L9,5L7,5C5.9,5 5,5.9 5,7L5,9L3,9L3,11L5,11L5,13L3,13L3,15L5,15L5,17C5,18.1 5.9,19 7,19L9,19L9,21L11,21L11,19L13,19L13,21L15,21L15,19L17,19C18.1,19 19,18.1 19,17L19,15L21,15L21,13L19,13L19,11L21,11ZM17,17L7,17L7,7L17,7L17,17Z" />
+    </group>
+</vector>
