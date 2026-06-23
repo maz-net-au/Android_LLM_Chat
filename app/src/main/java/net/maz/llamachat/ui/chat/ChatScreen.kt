@@ -81,6 +81,8 @@ fun ChatScreen(
 
     val character = conv?.character
     val messages = conv?.messages ?: emptyList()
+    val userName = conv?.userName ?: "user"
+    val characterName = conv?.characterName ?: ""
     val lastAssistantIndex = messages.indexOfLast { it.role == Role.ASSISTANT }
     val lastIsAssistant = messages.lastOrNull()?.role == Role.ASSISTANT
     val showActions = state.streaming || lastIsAssistant
@@ -117,6 +119,8 @@ fun ChatScreen(
                     itemsIndexed(messages, key = { _, m -> m.id }) { index, message ->
                         MessageItem(
                             message = message,
+                            userName = userName,
+                            characterName = characterName,
                             editing = state.editingMsgId == message.id,
                             selected = state.selectedMsgId == message.id,
                             isLastAssistant = index == lastAssistantIndex,
@@ -210,9 +214,21 @@ private fun ChatMenuItem(
     )
 }
 
+/**
+ * The text shown in a bubble: the stored text minus the leading "Name:" speaker
+ * prefix. Display-only — the stored message keeps the prefix so future API turns
+ * still carry it.
+ */
+private fun ChatMessage.displayText(userName: String, characterName: String): String {
+    val prefix = if (role == Role.USER) "$userName: " else "$characterName: "
+    return text.removePrefix(prefix)
+}
+
 @Composable
 private fun MessageItem(
     message: ChatMessage,
+    userName: String,
+    characterName: String,
     editing: Boolean,
     selected: Boolean,
     isLastAssistant: Boolean,
@@ -240,7 +256,7 @@ private fun MessageItem(
             if (editing) {
                 EditBox(editText, onEditTextChange, onSaveEdit, onCancelEdit)
             } else {
-                MessageBubble(message, isUser, streamingCaret, onTap)
+                MessageBubble(message.displayText(userName, characterName), isUser, streamingCaret, onTap)
                 if (!isUser && message.variantCount > 1) {
                     VariantNav(message, onPrevVariant, onNextVariant)
                 }
@@ -253,7 +269,7 @@ private fun MessageItem(
 }
 
 @Composable
-private fun MessageBubble(message: ChatMessage, isUser: Boolean, streamingCaret: Boolean, onTap: () -> Unit) {
+private fun MessageBubble(text: String, isUser: Boolean, streamingCaret: Boolean, onTap: () -> Unit) {
     val shape = if (isUser) RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp) else RoundedCornerShape(0.dp)
     val bg = if (isUser) DcColors.PrimaryContainer else Color.Transparent
     Column(
@@ -262,8 +278,8 @@ private fun MessageBubble(message: ChatMessage, isUser: Boolean, streamingCaret:
             .clickable(onClick = onTap)
             .padding(if (isUser) PaddingUser else PaddingAssistant),
     ) {
-        if (message.text.isNotEmpty()) {
-            MarkdownText(message.text)
+        if (text.isNotEmpty()) {
+            MarkdownText(text)
         }
         if (streamingCaret) {
             BlinkingCaret()
