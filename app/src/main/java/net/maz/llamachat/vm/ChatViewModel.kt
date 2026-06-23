@@ -112,7 +112,7 @@ class ChatViewModel(
             val preset = conv.preset
             val request = ChatRequest(
                 model = conv.model.ifEmpty { s.currentModel },
-                messages = buildApiMessages(conv, idx, includePartial, s.userName),
+                messages = buildApiMessages(conv, idx, includePartial, conv.userName),
                 stream = true,
                 temperature = preset.temperature,
                 topP = preset.topP,

@@ -25,6 +25,8 @@ data class NewConvUiState(
     val character: String = "Assistant",
     val preset: String = "Default",
     val model: String = "",
+    /** Substituted for `{{user}}`; defaults to the last-used name. */
+    val userName: String = "user",
     val openMenu: NewMenu = NewMenu.NONE,
     /** Set to the conversation id once started/saved, for the screen to navigate. */
     val startedId: Long? = null,
@@ -52,16 +54,18 @@ class NewConversationViewModel(
                             character = c.characterName,
                             preset = c.presetName,
                             model = c.model.ifEmpty { current.currentModel },
+                            userName = c.userName,
                         )
                     }
                 }
             } else {
-                _state.update { it.copy(model = current.currentModel) }
+                _state.update { it.copy(model = current.currentModel, userName = current.userName) }
             }
         }
     }
 
     fun setTitle(v: String) = _state.update { it.copy(title = v) }
+    fun setUserName(v: String) = _state.update { it.copy(userName = v) }
     fun selectCharacter(name: String) = _state.update { it.copy(character = name, openMenu = NewMenu.NONE) }
     fun selectPreset(name: String) = _state.update { it.copy(preset = name, openMenu = NewMenu.NONE) }
     fun selectModel(model: String) = _state.update { it.copy(model = model) }
@@ -72,7 +76,10 @@ class NewConversationViewModel(
     fun start() {
         val st = _state.value
         val title = st.title.trim()
+        val userName = st.userName.trim().ifEmpty { "user" }
         viewModelScope.launch {
+            // Remember this name as the default for future conversations.
+            settings.setUserName(userName)
             if (st.editing && editConvId != null) {
                 repo.get(editConvId)?.let { existing ->
                     repo.save(
@@ -80,6 +87,7 @@ class NewConversationViewModel(
                             characterName = st.character,
                             presetName = st.preset,
                             model = st.model,
+                            userName = userName,
                             title = title.ifEmpty { existing.title },
                             updatedAt = System.currentTimeMillis(),
                         ),
@@ -91,7 +99,7 @@ class NewConversationViewModel(
                 val id = IdGen.next()
                 val current = settings.current()
                 // Seed the character's greeting (if any) as the first assistant turn.
-                val greeting = Catalog.character(st.character).resolvedGreeting(current.userName)
+                val greeting = Catalog.character(st.character).resolvedGreeting(userName)
                 val seed = greeting?.let { listOf(ChatMessage.assistant(IdGen.next(), it)) }
                     ?: emptyList()
                 repo.save(
@@ -103,6 +111,7 @@ class NewConversationViewModel(
                         model = st.model.ifEmpty { current.currentModel },
                         createdAt = now,
                         updatedAt = now,
+                        userName = userName,
                         messages = seed,
                     ),
                 )

@@ -94,6 +94,15 @@ fun NewConversationScreen(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 22.dp),
             )
 
+            SectionLabel("YOUR NAME")
+            DcTextField(
+                label = "",
+                value = state.userName,
+                onValueChange = vm::setUserName,
+                placeholder = "user",
+                modifier = Modifier.fillMaxWidth().padding(bottom = 22.dp),
+            )
+
             SectionLabel("CHARACTER")
             CharacterSelector(vm, selectedName = state.character)
 

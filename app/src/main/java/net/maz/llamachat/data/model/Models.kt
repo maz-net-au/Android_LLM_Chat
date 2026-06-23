@@ -43,6 +43,8 @@ data class Conversation(
     val model: String,
     val createdAt: Long,
     val updatedAt: Long,
+    /** Name substituted for `{{user}}` in this conversation's prompts/greeting. */
+    val userName: String = "user",
     val messages: List<ChatMessage> = emptyList(),
 ) {
     val character get() = Catalog.character(characterName)

@@ -27,7 +27,7 @@ class SettingsRepository(private val context: Context) {
         val ip: String,
         val port: String,
         val currentModel: String,
-        /** Substituted for `{{user}}` in character prompts and greetings. */
+        /** Default name for new conversations' `{{user}}`; the last name the user set. */
         val userName: String,
     )
 
@@ -36,7 +36,7 @@ class SettingsRepository(private val context: Context) {
             ip = prefs[Keys.IP] ?: "192.168.1.42",
             port = prefs[Keys.PORT] ?: "8080",
             currentModel = prefs[Keys.CURRENT_MODEL] ?: Catalog.fallbackModels.first(),
-            userName = prefs[Keys.USER_NAME]?.takeIf { it.isNotBlank() } ?: "User",
+            userName = prefs[Keys.USER_NAME]?.takeIf { it.isNotBlank() } ?: "user",
         )
     }
 
@@ -51,6 +51,11 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setCurrentModel(model: String) {
         context.dataStore.edit { it[Keys.CURRENT_MODEL] = model }
+    }
+
+    /** Remember the most recently used name as the default for future conversations. */
+    suspend fun setUserName(name: String) {
+        context.dataStore.edit { it[Keys.USER_NAME] = name }
     }
 
     suspend fun wasSeeded(): Boolean = context.dataStore.data.first()[Keys.SEEDED] ?: false

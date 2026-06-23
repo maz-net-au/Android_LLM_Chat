@@ -22,6 +22,7 @@ data class ConversationEntity(
     val model: String,
     val createdAt: Long,
     val updatedAt: Long,
+    val userName: String = "user",
     val messagesJson: String,
 ) {
     fun toDomain(): Conversation = Conversation(
@@ -32,6 +33,7 @@ data class ConversationEntity(
         model = model,
         createdAt = createdAt,
         updatedAt = updatedAt,
+        userName = userName,
         messages = runCatching {
             json.decodeFromString<List<ChatMessage>>(messagesJson)
         }.getOrDefault(emptyList()),
@@ -46,6 +48,7 @@ data class ConversationEntity(
             model = c.model,
             createdAt = c.createdAt,
             updatedAt = c.updatedAt,
+            userName = c.userName,
             messagesJson = json.encodeToString(c.messages),
         )
     }
