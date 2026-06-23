@@ -92,8 +92,6 @@ object Catalog {
         Character("Assistant", "You are a helpful, concise assistant.", null, "Helpful, concise general assistant.", DcColors.Primary, usesNamePrefixes = false),
         Character("Default", "", null, "Neutral. No system persona.", Color(0xFF7E57C2), usesNamePrefixes = false),
         Character("Coding Helper", "You are a senior software engineer. Explain clearly and back up explanations with concise code examples.", null, "Senior engineer. Explains with code.", DcColors.PrimaryDark, usesNamePrefixes = false),
-        Character("Storyteller", "You are a vivid, imaginative storyteller. Answer with rich, evocative narration.", null, "Vivid, imaginative narrator.", Color(0xFF8E24AA)),
-        Character("Marcus", "You are Marcus, a stoic philosopher. Respond calmly and thoughtfully, drawing on stoic principles.", "Greetings. What weighs on your mind today?", "Stoic philosopher. Calm, thoughtful.", Color(0xFF5C6BC0)),
     )
 
     /** The live character list. Replaced by CharacterRepository as the user edits;

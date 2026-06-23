@@ -81,7 +81,7 @@ fun ChatScreen(
 
     val character = conv?.character
     val messages = conv?.messages ?: emptyList()
-    val userName = conv?.userName ?: "user"
+    val userName = conv?.userName ?: "You"
     val characterName = conv?.characterName ?: ""
     val lastAssistantIndex = messages.indexOfLast { it.role == Role.ASSISTANT }
     val lastIsAssistant = messages.lastOrNull()?.role == Role.ASSISTANT
