@@ -5,6 +5,7 @@ import net.maz.llamachat.data.CharacterRepository
 import net.maz.llamachat.data.ConversationRepository
 import net.maz.llamachat.data.SettingsRepository
 import net.maz.llamachat.data.db.AppDatabase
+import net.maz.llamachat.data.gen.GenerationController
 import net.maz.llamachat.data.net.LlamaClient
 import kotlinx.coroutines.flow.MutableStateFlow
 
@@ -31,6 +32,8 @@ class LlamaChatApp : Application() {
     val characterRepository by lazy { CharacterRepository(this) }
     val llamaClient by lazy { LlamaClient() }
     val session = ServerSession()
+    /** Live progress of the in-flight reply, shared with the GenerationService. */
+    val generation = GenerationController()
 
     override fun onCreate() {
         super.onCreate()

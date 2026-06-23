@@ -15,6 +15,9 @@ interface ConversationDao {
     @Query("SELECT * FROM conversations WHERE id = :id")
     suspend fun getById(id: Long): ConversationEntity?
 
+    @Query("SELECT * FROM conversations WHERE id = :id")
+    fun observeById(id: Long): Flow<ConversationEntity?>
+
     @Query("SELECT COUNT(*) FROM conversations")
     suspend fun count(): Int
 

@@ -4,22 +4,21 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import net.maz.llamachat.LlamaChatApp
 import net.maz.llamachat.data.ConversationRepository
 import net.maz.llamachat.data.IdGen
-import net.maz.llamachat.data.SettingsRepository
+import net.maz.llamachat.data.gen.GenerationController
+import net.maz.llamachat.data.gen.GenerationService
 import net.maz.llamachat.data.model.ChatMessage
 import net.maz.llamachat.data.model.Conversation
 import net.maz.llamachat.data.model.Role
-import net.maz.llamachat.data.net.ApiMessage
-import net.maz.llamachat.data.net.ChatRequest
-import net.maz.llamachat.data.net.LlamaClient
 
 data class ChatUiState(
     val loaded: Boolean = false,
@@ -36,194 +35,132 @@ data class ChatUiState(
     val closed: Boolean = false,
 )
 
+/**
+ * The chat screen's state holder. The conversation is owned by Room (the single
+ * source of truth) so an in-flight reply — which is streamed and persisted by the
+ * [GenerationService], not this ViewModel — keeps advancing even when the screen
+ * is gone. The displayed state is a [combine] of three sources:
+ *  - [local]: transient UI not worth persisting (input box, selection, editing);
+ *  - the conversation flow from Room;
+ *  - the live [GenerationController] overlay, which carries the streaming reply's
+ *    text per-token (Room only gets throttled checkpoints).
+ */
 class ChatViewModel(
     val convId: Long,
-    private val client: LlamaClient,
-    private val settings: SettingsRepository,
-    private val repo: ConversationRepository,
+    private val app: LlamaChatApp,
 ) : ViewModel() {
 
-    private val _ui = MutableStateFlow(ChatUiState())
-    val ui = _ui.asStateFlow()
+    private val repo: ConversationRepository = app.conversationRepository
+    private val controller: GenerationController = app.generation
 
-    private var streamJob: Job? = null
+    /** Transient, screen-only state that never touches Room. */
+    private data class Local(
+        val input: String = "",
+        val selectedMsgId: Long? = null,
+        val editingMsgId: Long? = null,
+        val editText: String = "",
+        val editPrefix: String = "",
+        val chatMenuOpen: Boolean = false,
+        val closed: Boolean = false,
+    )
+
+    private val local = MutableStateFlow(Local())
+
+    /** Latest persisted conversation, cached so the action handlers (send, edit,
+     *  delete, …) can read-modify-write without an extra suspend round-trip. */
+    @Volatile private var base: Conversation? = null
+
+    val ui: StateFlow<ChatUiState> =
+        combine(local, repo.observe(convId), controller.state) { l, conv, gen ->
+            base = conv
+            val streaming = gen != null && gen.convId == convId
+            val merged = when {
+                conv != null && streaming ->
+                    conv.copy(messages = conv.messages.map {
+                        if (it.id == gen!!.targetId) it.withText(gen.text) else it
+                    })
+                else -> conv
+            }
+            ChatUiState(
+                loaded = true,
+                conversation = merged,
+                input = l.input,
+                streaming = streaming,
+                selectedMsgId = l.selectedMsgId,
+                editingMsgId = l.editingMsgId,
+                editText = l.editText,
+                editPrefix = l.editPrefix,
+                chatMenuOpen = l.chatMenuOpen,
+                closed = l.closed,
+            )
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
     init {
-        viewModelScope.launch {
-            val conv = repo.get(convId)
-            _ui.update { it.copy(loaded = true, conversation = conv) }
-        }
+        // Prime [base] so actions work even before the UI starts collecting.
+        viewModelScope.launch { base = repo.get(convId) }
     }
 
-    // ---- state helpers -----------------------------------------------------
-
-    private fun updateConv(block: (Conversation) -> Conversation) {
-        _ui.update { st ->
-            val c = st.conversation ?: return@update st
-            st.copy(conversation = block(c).copy(updatedAt = System.currentTimeMillis()))
-        }
-    }
-
-    private fun setText(messageId: Long, text: String) {
-        updateConv { c ->
-            c.copy(messages = c.messages.map { if (it.id == messageId) it.withText(text) else it })
-        }
-    }
-
-    private fun persistAsync() {
-        val c = _ui.value.conversation ?: return
-        viewModelScope.launch { repo.save(c) }
-    }
+    private fun isStreaming(): Boolean = controller.isActive(convId)
 
     // ---- input -------------------------------------------------------------
 
-    fun setInput(v: String) = _ui.update { it.copy(input = v) }
+    fun setInput(v: String) = local.update { it.copy(input = v) }
 
     fun send() {
-        val text = _ui.value.input.trim()
-        if (text.isEmpty() || _ui.value.streaming) return
-        val conv = _ui.value.conversation ?: return
+        val text = local.value.input.trim()
+        if (text.isEmpty() || isStreaming()) return
+        val conv = base ?: return
         val prefixes = conv.character.usesNamePrefixes
         val userId = IdGen.next()
         val assistantId = IdGen.next()
-        updateConv { c ->
-            val title = if (c.title == "New chat") deriveTitle(text) else c.title
-            c.copy(
-                title = title,
-                messages = c.messages +
-                    ChatMessage.user(userId, if (prefixes) "${c.userName}: $text" else text) +
-                    // In transcript mode, prefill the reply with "Character: " so the
-                    // model is forced to speak as the character; generation continues it.
-                    ChatMessage.assistant(assistantId, if (prefixes) "${c.characterName}: " else ""),
-            )
+        val title = if (conv.title == "New chat") deriveTitle(text) else conv.title
+        val updated = conv.copy(
+            title = title,
+            updatedAt = System.currentTimeMillis(),
+            messages = conv.messages +
+                ChatMessage.user(userId, if (prefixes) "${conv.userName}: $text" else text) +
+                // In transcript mode, prefill the reply with "Character: " so the
+                // model is forced to speak as the character; generation continues it.
+                ChatMessage.assistant(assistantId, if (prefixes) "${conv.characterName}: " else ""),
+        )
+        local.update { it.copy(input = "", selectedMsgId = null) }
+        saveThen(updated) {
+            GenerationService.start(app, convId, assistantId, includePartial = prefixes, forceContinue = false, title = updated.title)
         }
-        _ui.update { it.copy(input = "", selectedMsgId = null) }
-        persistAsync()
-        startGeneration(assistantId, includePartial = prefixes)
     }
 
     private fun deriveTitle(text: String): String =
         if (text.length > 30) text.take(30) + "…" else text
 
-    // ---- generation --------------------------------------------------------
-
-    private fun startGeneration(targetId: Long, includePartial: Boolean, forceContinue: Boolean = false) {
-        streamJob?.cancel()
-        streamJob = viewModelScope.launch {
-            val s = settings.current()
-            val conv = _ui.value.conversation ?: return@launch
-            val idx = conv.messages.indexOfFirst { it.id == targetId }
-            if (idx < 0) return@launch
-            // On "Continue", trim trailing whitespace: a partial ending in a
-            // space/newline reads as a finished turn, making the model emit EOS
-            // immediately. Only on that path — a fresh transcript reply is prefilled
-            // with "Name: " whose trailing space must survive (see buildApiMessages).
-            val base = when {
-                !includePartial -> ""
-                forceContinue -> conv.messages[idx].text.trimEnd()
-                else -> conv.messages[idx].text
-            }
-            val preset = conv.preset
-            val request = ChatRequest(
-                model = conv.model.ifEmpty { s.currentModel },
-                messages = buildApiMessages(conv, idx, includePartial, conv.userName, forceContinue),
-                stream = true,
-                // Stop before the model speaks for the user or restarts its own turn.
-                stop = if (conv.character.usesNamePrefixes)
-                    listOf("${conv.userName}:", "${conv.characterName}:") else null,
-                // "Continue": ignore EOS so an already-complete-looking reply keeps
-                // going, capped so it can't run away (stop strings still apply).
-                maxTokens = if (forceContinue) 1000 else null,
-                ignoreEos = if (forceContinue) true else null,
-                temperature = preset.temperature,
-                topP = preset.topP,
-                topK = preset.topK,
-                minP = preset.minP,
-                typicalP = preset.typicalP,
-                repeatPenalty = preset.repeatPenalty,
-                repeatLastN = preset.repeatLastN,
-                presencePenalty = preset.presencePenalty,
-                frequencyPenalty = preset.frequencyPenalty,
-                mirostat = preset.mirostat,
-                mirostatTau = preset.mirostatTau,
-                mirostatEta = preset.mirostatEta,
-            )
-            _ui.update { it.copy(streaming = true) }
-            val sb = StringBuilder(base)
-            try {
-                client.streamChat(s.ip, s.port, request).collect { delta ->
-                    sb.append(delta)
-                    setText(targetId, sb.toString())
-                }
-                _ui.value.conversation?.let { repo.save(it) }
-            } catch (c: CancellationException) {
-                throw c // Stop / navigation away: keep the partial text (persisted by stop()).
-            } catch (e: Exception) {
-                if (sb.length <= base.length) { // nothing generated beyond the prefill
-                    setText(targetId, "⚠️ Couldn't generate a reply: ${e.message ?: "unknown error"}")
-                }
-                _ui.value.conversation?.let { repo.save(it) }
-            } finally {
-                _ui.update { it.copy(streaming = false) }
-            }
-        }
-    }
-
-    /**
-     * Build the OpenAI-style message history sent to the server. Messages before
-     * [assistantIndex] form the context; when [includePartial] is set (the
-     * "Continue" action) the target assistant's current text is appended so the
-     * server keeps generating from it.
-     */
-    private fun buildApiMessages(
-        conv: Conversation,
-        assistantIndex: Int,
-        includePartial: Boolean,
-        userName: String,
-        forceContinue: Boolean,
-    ): List<ApiMessage> {
-        val out = ArrayList<ApiMessage>()
-        conv.character.resolvedContext(userName).takeIf { it.isNotBlank() }
-            ?.let { out += ApiMessage("system", it) }
-        conv.messages.forEachIndexed { i, m ->
-            if (i < assistantIndex) {
-                out += ApiMessage(if (m.role == Role.USER) "user" else "assistant", m.text)
-            }
-        }
-        if (includePartial) {
-            // Trim only on Continue; a fresh transcript prefill ("Name: ") must keep
-            // its trailing space so generated text matches the UI's prefix stripping.
-            val raw = conv.messages.getOrNull(assistantIndex)?.text.orEmpty()
-            val partial = if (forceContinue) raw.trimEnd() else raw
-            if (partial.isNotBlank()) out += ApiMessage("assistant", partial)
-        }
-        return out
-    }
-
-    fun stop() {
-        streamJob?.cancel()
-        streamJob = null
-        _ui.update { it.copy(streaming = false) }
-        persistAsync()
-    }
-
     /** Add a fresh variant to the last assistant message and regenerate it. */
     fun regenerate() {
-        if (_ui.value.streaming) return
-        val conv = _ui.value.conversation ?: return
+        if (isStreaming()) return
+        val conv = base ?: return
         val last = conv.messages.lastOrNull { it.role == Role.ASSISTANT } ?: return
         val prefixes = conv.character.usesNamePrefixes
-        updateConv { c ->
-            c.copy(messages = c.messages.map { if (it.id == last.id) it.addVariant(if (prefixes) "${c.characterName}: " else "") else it })
+        val updated = conv.copy(
+            updatedAt = System.currentTimeMillis(),
+            messages = conv.messages.map {
+                if (it.id == last.id) it.addVariant(if (prefixes) "${conv.characterName}: " else "") else it
+            },
+        )
+        local.update { it.copy(selectedMsgId = null, chatMenuOpen = false) }
+        saveThen(updated) {
+            GenerationService.start(app, convId, last.id, includePartial = prefixes, forceContinue = false, title = updated.title)
         }
-        _ui.update { it.copy(selectedMsgId = null, chatMenuOpen = false) }
-        startGeneration(last.id, includePartial = prefixes)
     }
 
     fun continueMessage(id: Long) {
-        if (_ui.value.streaming) return
-        _ui.update { it.copy(selectedMsgId = null) }
-        startGeneration(id, includePartial = true, forceContinue = true)
+        if (isStreaming()) return
+        local.update { it.copy(selectedMsgId = null) }
+        // The partial is already in Room; the service reads and extends it.
+        GenerationService.start(app, convId, id, includePartial = true, forceContinue = true, title = base?.title ?: "")
+    }
+
+    /** Stop the in-flight reply. The service preserves the partial and removes
+     *  its notification; the UI's streaming flag clears via the controller. */
+    fun stop() {
+        GenerationService.cancel(app)
     }
 
     // ---- variants ----------------------------------------------------------
@@ -232,34 +169,34 @@ class ChatViewModel(
     fun nextVariant(id: Long) = shiftVariant(id, +1)
 
     private fun shiftVariant(id: Long, delta: Int) {
-        updateConv { c ->
-            c.copy(
-                messages = c.messages.map { m ->
-                    if (m.id == id && m.variants.isNotEmpty()) {
-                        m.copy(activeVariant = (m.activeVariant + delta).coerceIn(0, m.variants.size - 1))
-                    } else {
-                        m
-                    }
-                },
-            )
-        }
-        _ui.update { it.copy(selectedMsgId = null) }
-        persistAsync()
+        val conv = base ?: return
+        val updated = conv.copy(
+            updatedAt = System.currentTimeMillis(),
+            messages = conv.messages.map { m ->
+                if (m.id == id && m.variants.isNotEmpty()) {
+                    m.copy(activeVariant = (m.activeVariant + delta).coerceIn(0, m.variants.size - 1))
+                } else {
+                    m
+                }
+            },
+        )
+        local.update { it.copy(selectedMsgId = null) }
+        saveThen(updated)
     }
 
     // ---- selection & editing ----------------------------------------------
 
-    fun toggleSelected(id: Long) = _ui.update {
+    fun toggleSelected(id: Long) = local.update {
         it.copy(selectedMsgId = if (it.selectedMsgId == id) null else id)
     }
 
     fun startEdit(id: Long) {
-        val conv = _ui.value.conversation ?: return
+        val conv = base ?: return
         val m = conv.messages.firstOrNull { it.id == id } ?: return
         // Edit the text without its "Name:" prefix; remember the exact prefix to re-apply.
         val name = if (m.role == Role.USER) conv.userName else conv.characterName
         val editPrefix = namePrefix(m.text, name)
-        _ui.update {
+        local.update {
             it.copy(editingMsgId = id, editText = m.text.removePrefix(editPrefix), editPrefix = editPrefix, selectedMsgId = null)
         }
     }
@@ -279,24 +216,28 @@ class ChatViewModel(
         }
     }
 
-    fun setEditText(v: String) = _ui.update { it.copy(editText = v) }
+    fun setEditText(v: String) = local.update { it.copy(editText = v) }
 
     fun saveEdit() {
-        val id = _ui.value.editingMsgId ?: return
-        val text = _ui.value.editPrefix + _ui.value.editText
-        updateConv { c -> c.copy(messages = c.messages.map { if (it.id == id) it.withText(text) else it }) }
-        _ui.update { it.copy(editingMsgId = null, editText = "", editPrefix = "") }
-        persistAsync()
+        val id = local.value.editingMsgId ?: return
+        val text = local.value.editPrefix + local.value.editText
+        val conv = base ?: return
+        val updated = conv.copy(
+            updatedAt = System.currentTimeMillis(),
+            messages = conv.messages.map { if (it.id == id) it.withText(text) else it },
+        )
+        local.update { it.copy(editingMsgId = null, editText = "", editPrefix = "") }
+        saveThen(updated)
     }
 
-    fun cancelEdit() = _ui.update { it.copy(editingMsgId = null, editText = "", editPrefix = "") }
+    fun cancelEdit() = local.update { it.copy(editingMsgId = null, editText = "", editPrefix = "") }
 
     // ---- deletion ----------------------------------------------------------
 
     /** Delete the last assistant message and the user turn that prompted it,
      *  restoring that prompt into the input (mirrors the prototype). */
     fun deleteLastAssistant() {
-        val conv = _ui.value.conversation ?: return
+        val conv = base ?: return
         val ai = conv.messages.indexOfLast { it.role == Role.ASSISTANT }
         if (ai < 0) return
         var ui = -1
@@ -309,44 +250,50 @@ class ChatViewModel(
         // (the prefix is re-applied on send), mirroring startEdit.
         val restore = if (ui >= 0)
             conv.messages[ui].text.removePrefix(namePrefix(conv.messages[ui].text, conv.userName))
-            else _ui.value.input
-        updateConv { c ->
-            c.copy(messages = c.messages.filter { it.id != assistantId && it.id != userId })
-        }
-        _ui.update { it.copy(input = restore, selectedMsgId = null) }
-        persistAsync()
+            else local.value.input
+        val updated = conv.copy(
+            updatedAt = System.currentTimeMillis(),
+            messages = conv.messages.filter { it.id != assistantId && it.id != userId },
+        )
+        local.update { it.copy(input = restore, selectedMsgId = null) }
+        saveThen(updated)
     }
 
     fun clearMessages() {
-        updateConv { it.copy(messages = emptyList()) }
-        _ui.update { it.copy(chatMenuOpen = false, selectedMsgId = null) }
-        persistAsync()
+        val conv = base ?: return
+        val updated = conv.copy(updatedAt = System.currentTimeMillis(), messages = emptyList())
+        local.update { it.copy(chatMenuOpen = false, selectedMsgId = null) }
+        saveThen(updated)
     }
 
     fun deleteConversation() {
-        streamJob?.cancel()
+        GenerationService.cancel(app) // tear down any reply still streaming for this chat
         viewModelScope.launch {
             repo.delete(convId)
-            _ui.update { it.copy(chatMenuOpen = false, closed = true) }
+            local.update { it.copy(chatMenuOpen = false, closed = true) }
         }
     }
 
     // ---- chat menu ---------------------------------------------------------
 
-    fun toggleChatMenu() = _ui.update { it.copy(chatMenuOpen = !it.chatMenuOpen) }
-    fun closeChatMenu() = _ui.update { it.copy(chatMenuOpen = false) }
+    fun toggleChatMenu() = local.update { it.copy(chatMenuOpen = !it.chatMenuOpen) }
+    fun closeChatMenu() = local.update { it.copy(chatMenuOpen = false) }
 
-    override fun onCleared() {
-        streamJob?.cancel()
+    // ---- persistence helper ------------------------------------------------
+
+    /** Persist [conv] (updating the [base] cache immediately so back-to-back
+     *  actions compose) and run [after] once the write has landed. */
+    private fun saveThen(conv: Conversation, after: (suspend () -> Unit)? = null) {
+        base = conv
+        viewModelScope.launch {
+            repo.save(conv)
+            after?.invoke()
+        }
     }
 
     companion object {
         fun factory(app: LlamaChatApp, convId: Long) = viewModelFactory {
-            initializer {
-                ChatViewModel(
-                    convId, app.llamaClient, app.settingsRepository, app.conversationRepository,
-                )
-            }
+            initializer { ChatViewModel(convId, app) }
         }
     }
 }

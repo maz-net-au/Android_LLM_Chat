@@ -14,6 +14,11 @@ class ConversationRepository(private val dao: ConversationDao) {
 
     suspend fun get(id: Long): Conversation? = dao.getById(id)?.toDomain()
 
+    /** Observe a single conversation, re-emitting on every write (incl. streamed
+     *  checkpoints from the generation service). Emits null once it's deleted. */
+    fun observe(id: Long): Flow<Conversation?> =
+        dao.observeById(id).map { it?.toDomain() }
+
     suspend fun save(conversation: Conversation) {
         dao.upsert(ConversationEntity.fromDomain(conversation))
     }
