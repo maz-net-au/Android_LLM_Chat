@@ -114,14 +114,19 @@ class ChatViewModel(
             val conv = _ui.value.conversation ?: return@launch
             val idx = conv.messages.indexOfFirst { it.id == targetId }
             if (idx < 0) return@launch
-            // Trim trailing whitespace: a partial ending in a space/newline reads as
-            // a finished turn, making the model emit EOS immediately. Keep base and
-            // the prefill sent (buildApiMessages) consistent so deltas append cleanly.
-            val base = if (includePartial) conv.messages[idx].text.trimEnd() else ""
+            // On "Continue", trim trailing whitespace: a partial ending in a
+            // space/newline reads as a finished turn, making the model emit EOS
+            // immediately. Only on that path — a fresh transcript reply is prefilled
+            // with "Name: " whose trailing space must survive (see buildApiMessages).
+            val base = when {
+                !includePartial -> ""
+                forceContinue -> conv.messages[idx].text.trimEnd()
+                else -> conv.messages[idx].text
+            }
             val preset = conv.preset
             val request = ChatRequest(
                 model = conv.model.ifEmpty { s.currentModel },
-                messages = buildApiMessages(conv, idx, includePartial, conv.userName),
+                messages = buildApiMessages(conv, idx, includePartial, conv.userName, forceContinue),
                 stream = true,
                 // Stop before the model speaks for the user or restarts its own turn.
                 stop = if (conv.character.usesNamePrefixes)
@@ -175,6 +180,7 @@ class ChatViewModel(
         assistantIndex: Int,
         includePartial: Boolean,
         userName: String,
+        forceContinue: Boolean,
     ): List<ApiMessage> {
         val out = ArrayList<ApiMessage>()
         conv.character.resolvedContext(userName).takeIf { it.isNotBlank() }
@@ -185,7 +191,10 @@ class ChatViewModel(
             }
         }
         if (includePartial) {
-            val partial = conv.messages.getOrNull(assistantIndex)?.text.orEmpty().trimEnd()
+            // Trim only on Continue; a fresh transcript prefill ("Name: ") must keep
+            // its trailing space so generated text matches the UI's prefix stripping.
+            val raw = conv.messages.getOrNull(assistantIndex)?.text.orEmpty()
+            val partial = if (forceContinue) raw.trimEnd() else raw
             if (partial.isNotBlank()) out += ApiMessage("assistant", partial)
         }
         return out
@@ -247,11 +256,26 @@ class ChatViewModel(
     fun startEdit(id: Long) {
         val conv = _ui.value.conversation ?: return
         val m = conv.messages.firstOrNull { it.id == id } ?: return
-        // Edit the text without its "Name:" prefix; remember the prefix to re-apply.
-        val prefix = if (m.role == Role.USER) "${conv.userName}: " else "${conv.characterName}: "
-        val editPrefix = if (m.text.startsWith(prefix)) prefix else ""
+        // Edit the text without its "Name:" prefix; remember the exact prefix to re-apply.
+        val name = if (m.role == Role.USER) conv.userName else conv.characterName
+        val editPrefix = namePrefix(m.text, name)
         _ui.update {
-            it.copy(editingMsgId = id, editText = m.text.removePrefix(prefix), editPrefix = editPrefix, selectedMsgId = null)
+            it.copy(editingMsgId = id, editText = m.text.removePrefix(editPrefix), editPrefix = editPrefix, selectedMsgId = null)
+        }
+    }
+
+    /**
+     * The transcript "Name:" prefix present on [text], including its trailing space
+     * when there is one — but an emote that follows the colon directly (e.g.
+     * "Name:*waves*") has no space, so we strip just "Name:" and leave the "*".
+     * Returns "" when no prefix is present (plain, non-transcript characters).
+     */
+    private fun namePrefix(text: String, name: String): String {
+        val colon = "$name:"
+        return when {
+            text.startsWith("$colon ") -> "$colon "
+            text.startsWith(colon) -> colon
+            else -> ""
         }
     }
 
@@ -283,7 +307,8 @@ class ChatViewModel(
         val userId = if (ui >= 0) conv.messages[ui].id else null
         // Restore the prompt into the input without its transcript "Name:" prefix
         // (the prefix is re-applied on send), mirroring startEdit.
-        val restore = if (ui >= 0) conv.messages[ui].text.removePrefix("${conv.userName}: ")
+        val restore = if (ui >= 0)
+            conv.messages[ui].text.removePrefix(namePrefix(conv.messages[ui].text, conv.userName))
             else _ui.value.input
         updateConv { c ->
             c.copy(messages = c.messages.filter { it.id != assistantId && it.id != userId })
