@@ -21,6 +21,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -54,6 +56,7 @@ fun CharacterEditScreen(
     var description by remember { mutableStateOf(existing?.description ?: "") }
     var greeting by remember { mutableStateOf(existing?.greeting ?: "") }
     var context by remember { mutableStateOf(existing?.context ?: "") }
+    var usesNamePrefixes by remember { mutableStateOf(existing?.usesNamePrefixes ?: true) }
 
     val canSave = name.isNotBlank()
 
@@ -116,6 +119,29 @@ fun CharacterEditScreen(
                 color = DcColors.OnSurfaceFaint,
                 modifier = Modifier.padding(top = 8.dp),
             )
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
+            ) {
+                Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                    Text("Name prefixes", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = DcColors.OnSurface)
+                    Text(
+                        "Format turns as a \"Name:\" transcript and force replies to stay in character. Turn off for plain assistant-style chats.",
+                        fontSize = 12.sp,
+                        color = DcColors.OnSurfaceFaint,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+                Switch(
+                    checked = usesNamePrefixes,
+                    onCheckedChange = { usesNamePrefixes = it },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = DcColors.Primary,
+                    ),
+                )
+            }
         }
 
         Box(Modifier.fillMaxWidth().background(Color.White).padding(16.dp)) {
@@ -127,6 +153,7 @@ fun CharacterEditScreen(
                         context = context,
                         greeting = greeting.ifBlank { null },
                         description = description,
+                        usesNamePrefixes = usesNamePrefixes,
                     )
                     onSaved()
                 },

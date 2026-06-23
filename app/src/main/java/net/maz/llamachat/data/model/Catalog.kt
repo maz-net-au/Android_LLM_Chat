@@ -20,6 +20,13 @@ data class Character(
     /** Optional one-line subtitle for the picker; falls back to a context snippet. */
     val description: String = "",
     val color: Color,
+    /**
+     * When true, turns are formatted as a "Name:" transcript: user lines are
+     * prefixed with the user's name, replies are prefilled with this character's
+     * name (forcing it to stay in character), and "Name:" stop sequences are sent.
+     * Disable for plain assistant-style chats where that framing hurts.
+     */
+    val usesNamePrefixes: Boolean = true,
 ) {
     /** Subtitle shown in the character picker. */
     fun subtitle(): String =
@@ -82,9 +89,9 @@ object Catalog {
      *  character has been deleted. The live, user-editable list lives in
      *  [characters], kept up to date by CharacterRepository. */
     val builtInCharacters: List<Character> = listOf(
-        Character("Assistant", "You are a helpful, concise assistant.", null, "Helpful, concise general assistant.", DcColors.Primary),
-        Character("Default", "", null, "Neutral. No system persona.", Color(0xFF7E57C2)),
-        Character("Coding Helper", "You are a senior software engineer. Explain clearly and back up explanations with concise code examples.", null, "Senior engineer. Explains with code.", DcColors.PrimaryDark),
+        Character("Assistant", "You are a helpful, concise assistant.", null, "Helpful, concise general assistant.", DcColors.Primary, usesNamePrefixes = false),
+        Character("Default", "", null, "Neutral. No system persona.", Color(0xFF7E57C2), usesNamePrefixes = false),
+        Character("Coding Helper", "You are a senior software engineer. Explain clearly and back up explanations with concise code examples.", null, "Senior engineer. Explains with code.", DcColors.PrimaryDark, usesNamePrefixes = false),
         Character("Storyteller", "You are a vivid, imaginative storyteller. Answer with rich, evocative narration.", null, "Vivid, imaginative narrator.", Color(0xFF8E24AA)),
         Character("Marcus", "You are Marcus, a stoic philosopher. Respond calmly and thoughtfully, drawing on stoic principles.", "Greetings. What weighs on your mind today?", "Stoic philosopher. Calm, thoughtful.", Color(0xFF5C6BC0)),
     )

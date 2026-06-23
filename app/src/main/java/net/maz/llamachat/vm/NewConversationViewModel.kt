@@ -98,10 +98,13 @@ class NewConversationViewModel(
                 val now = System.currentTimeMillis()
                 val id = IdGen.next()
                 val current = settings.current()
-                // Seed the character's greeting (if any) as the first assistant turn,
-                // prefixed with the character name to match the chat transcript format.
-                val greeting = Catalog.character(st.character).resolvedGreeting(userName)
-                val seed = greeting?.let { listOf(ChatMessage.assistant(IdGen.next(), "${st.character}: $it")) }
+                // Seed the character's greeting (if any) as the first assistant turn.
+                // In transcript mode it's prefixed with the character name to match.
+                val character = Catalog.character(st.character)
+                val greeting = character.resolvedGreeting(userName)?.let {
+                    if (character.usesNamePrefixes) "${st.character}: $it" else it
+                }
+                val seed = greeting?.let { listOf(ChatMessage.assistant(IdGen.next(), it)) }
                     ?: emptyList()
                 repo.save(
                     Conversation(

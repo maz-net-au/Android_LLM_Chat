@@ -25,9 +25,10 @@ class CharacterViewModel(
         context: String,
         greeting: String?,
         description: String,
+        usesNamePrefixes: Boolean,
     ) {
         viewModelScope.launch {
-            repo.upsert(originalName, name.trim(), context, greeting, description.trim())
+            repo.upsert(originalName, name.trim(), context, greeting, description.trim(), usesNamePrefixes)
         }
     }
 

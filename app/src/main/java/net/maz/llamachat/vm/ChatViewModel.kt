@@ -80,6 +80,8 @@ class ChatViewModel(
     fun send() {
         val text = _ui.value.input.trim()
         if (text.isEmpty() || _ui.value.streaming) return
+        val conv = _ui.value.conversation ?: return
+        val prefixes = conv.character.usesNamePrefixes
         val userId = IdGen.next()
         val assistantId = IdGen.next()
         updateConv { c ->
@@ -87,15 +89,15 @@ class ChatViewModel(
             c.copy(
                 title = title,
                 messages = c.messages +
-                    ChatMessage.user(userId, "${c.userName}: $text") +
-                    // Prefill the reply with "Character: " so the model is forced
-                    // to speak as the character; generation continues from it.
-                    ChatMessage.assistant(assistantId, "${c.characterName}: "),
+                    ChatMessage.user(userId, if (prefixes) "${c.userName}: $text" else text) +
+                    // In transcript mode, prefill the reply with "Character: " so the
+                    // model is forced to speak as the character; generation continues it.
+                    ChatMessage.assistant(assistantId, if (prefixes) "${c.characterName}: " else ""),
             )
         }
         _ui.update { it.copy(input = "", selectedMsgId = null) }
         persistAsync()
-        startGeneration(assistantId, includePartial = true)
+        startGeneration(assistantId, includePartial = prefixes)
     }
 
     private fun deriveTitle(text: String): String =
@@ -117,7 +119,8 @@ class ChatViewModel(
                 messages = buildApiMessages(conv, idx, includePartial, conv.userName),
                 stream = true,
                 // Stop before the model speaks for the user or restarts its own turn.
-                stop = listOf("${conv.userName}:", "${conv.characterName}:"),
+                stop = if (conv.character.usesNamePrefixes)
+                    listOf("${conv.userName}:", "${conv.characterName}:") else null,
                 temperature = preset.temperature,
                 topP = preset.topP,
                 topK = preset.topK,
@@ -191,11 +194,12 @@ class ChatViewModel(
         if (_ui.value.streaming) return
         val conv = _ui.value.conversation ?: return
         val last = conv.messages.lastOrNull { it.role == Role.ASSISTANT } ?: return
+        val prefixes = conv.character.usesNamePrefixes
         updateConv { c ->
-            c.copy(messages = c.messages.map { if (it.id == last.id) it.addVariant("${c.characterName}: ") else it })
+            c.copy(messages = c.messages.map { if (it.id == last.id) it.addVariant(if (prefixes) "${c.characterName}: " else "") else it })
         }
         _ui.update { it.copy(selectedMsgId = null, chatMenuOpen = false) }
-        startGeneration(last.id, includePartial = true)
+        startGeneration(last.id, includePartial = prefixes)
     }
 
     fun continueMessage(id: Long) {

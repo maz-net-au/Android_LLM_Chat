@@ -30,6 +30,7 @@ class CharacterRepository(context: Context) {
         val greeting: String? = null,
         val description: String = "",
         val colorArgb: Int,
+        val usesNamePrefixes: Boolean = true,
     )
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
@@ -52,6 +53,7 @@ class CharacterRepository(context: Context) {
         context: String,
         greeting: String?,
         description: String,
+        usesNamePrefixes: Boolean,
         color: Color? = null,
     ): String = withContext(Dispatchers.IO) {
         val without = _characters.value.filterNot {
@@ -67,6 +69,7 @@ class CharacterRepository(context: Context) {
             greeting = greeting?.takeIf { it.isNotBlank() },
             description = description,
             color = resolvedColor,
+            usesNamePrefixes = usesNamePrefixes,
         )
         persist(updated.sortedBy { it.name.lowercase() })
         finalName
@@ -134,8 +137,8 @@ class CharacterRepository(context: Context) {
     }
 
     private fun Character.toStored() =
-        Stored(name, context, greeting, description, color.toArgb())
+        Stored(name, context, greeting, description, color.toArgb(), usesNamePrefixes)
 
     private fun Stored.toCharacter() =
-        Character(name, context, greeting, description, Color(colorArgb))
+        Character(name, context, greeting, description, Color(colorArgb), usesNamePrefixes)
 }
