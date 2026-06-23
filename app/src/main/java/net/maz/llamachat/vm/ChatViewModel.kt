@@ -281,7 +281,10 @@ class ChatViewModel(
         }
         val assistantId = conv.messages[ai].id
         val userId = if (ui >= 0) conv.messages[ui].id else null
-        val restore = if (ui >= 0) conv.messages[ui].text else _ui.value.input
+        // Restore the prompt into the input without its transcript "Name:" prefix
+        // (the prefix is re-applied on send), mirroring startEdit.
+        val restore = if (ui >= 0) conv.messages[ui].text.removePrefix("${conv.userName}: ")
+            else _ui.value.input
         updateConv { c ->
             c.copy(messages = c.messages.filter { it.id != assistantId && it.id != userId })
         }
