@@ -87,13 +87,15 @@ class ChatViewModel(
             c.copy(
                 title = title,
                 messages = c.messages +
-                    ChatMessage.user(userId, text) +
-                    ChatMessage.assistant(assistantId),
+                    ChatMessage.user(userId, "${c.userName}: $text") +
+                    // Prefill the reply with "Character: " so the model is forced
+                    // to speak as the character; generation continues from it.
+                    ChatMessage.assistant(assistantId, "${c.characterName}: "),
             )
         }
         _ui.update { it.copy(input = "", selectedMsgId = null) }
         persistAsync()
-        startGeneration(assistantId, includePartial = false)
+        startGeneration(assistantId, includePartial = true)
     }
 
     private fun deriveTitle(text: String): String =
@@ -114,6 +116,8 @@ class ChatViewModel(
                 model = conv.model.ifEmpty { s.currentModel },
                 messages = buildApiMessages(conv, idx, includePartial, conv.userName),
                 stream = true,
+                // Stop before the model speaks for the user or restarts its own turn.
+                stop = listOf("${conv.userName}:", "${conv.characterName}:"),
                 temperature = preset.temperature,
                 topP = preset.topP,
                 topK = preset.topK,
@@ -138,7 +142,7 @@ class ChatViewModel(
             } catch (c: CancellationException) {
                 throw c // Stop / navigation away: keep the partial text (persisted by stop()).
             } catch (e: Exception) {
-                if (sb.isEmpty()) {
+                if (sb.length <= base.length) { // nothing generated beyond the prefill
                     setText(targetId, "⚠️ Couldn't generate a reply: ${e.message ?: "unknown error"}")
                 }
                 _ui.value.conversation?.let { repo.save(it) }
@@ -188,10 +192,10 @@ class ChatViewModel(
         val conv = _ui.value.conversation ?: return
         val last = conv.messages.lastOrNull { it.role == Role.ASSISTANT } ?: return
         updateConv { c ->
-            c.copy(messages = c.messages.map { if (it.id == last.id) it.addVariant("") else it })
+            c.copy(messages = c.messages.map { if (it.id == last.id) it.addVariant("${c.characterName}: ") else it })
         }
         _ui.update { it.copy(selectedMsgId = null, chatMenuOpen = false) }
-        startGeneration(last.id, includePartial = false)
+        startGeneration(last.id, includePartial = true)
     }
 
     fun continueMessage(id: Long) {

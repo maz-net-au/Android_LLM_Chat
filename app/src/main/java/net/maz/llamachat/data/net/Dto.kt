@@ -15,6 +15,8 @@ data class ChatRequest(
     val model: String,
     val messages: List<ApiMessage>,
     val stream: Boolean = true,
+    /** Sequences that halt generation, e.g. the next speaker's "Name:" prefix. */
+    val stop: List<String>? = null,
     val temperature: Double? = null,
     @SerialName("top_p") val topP: Double? = null,
     @SerialName("top_k") val topK: Int? = null,
