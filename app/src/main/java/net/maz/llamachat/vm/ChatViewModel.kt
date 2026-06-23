@@ -29,6 +29,8 @@ data class ChatUiState(
     val selectedMsgId: Long? = null,
     val editingMsgId: Long? = null,
     val editText: String = "",
+    /** Speaker prefix stripped from the message being edited, re-applied on save. */
+    val editPrefix: String = "",
     val chatMenuOpen: Boolean = false,
     /** True once the conversation has been deleted — the screen pops to Home. */
     val closed: Boolean = false,
@@ -236,21 +238,27 @@ class ChatViewModel(
     }
 
     fun startEdit(id: Long) {
-        val m = _ui.value.conversation?.messages?.firstOrNull { it.id == id } ?: return
-        _ui.update { it.copy(editingMsgId = id, editText = m.text, selectedMsgId = null) }
+        val conv = _ui.value.conversation ?: return
+        val m = conv.messages.firstOrNull { it.id == id } ?: return
+        // Edit the text without its "Name:" prefix; remember the prefix to re-apply.
+        val prefix = if (m.role == Role.USER) "${conv.userName}: " else "${conv.characterName}: "
+        val editPrefix = if (m.text.startsWith(prefix)) prefix else ""
+        _ui.update {
+            it.copy(editingMsgId = id, editText = m.text.removePrefix(prefix), editPrefix = editPrefix, selectedMsgId = null)
+        }
     }
 
     fun setEditText(v: String) = _ui.update { it.copy(editText = v) }
 
     fun saveEdit() {
         val id = _ui.value.editingMsgId ?: return
-        val text = _ui.value.editText
+        val text = _ui.value.editPrefix + _ui.value.editText
         updateConv { c -> c.copy(messages = c.messages.map { if (it.id == id) it.withText(text) else it }) }
-        _ui.update { it.copy(editingMsgId = null, editText = "") }
+        _ui.update { it.copy(editingMsgId = null, editText = "", editPrefix = "") }
         persistAsync()
     }
 
-    fun cancelEdit() = _ui.update { it.copy(editingMsgId = null, editText = "") }
+    fun cancelEdit() = _ui.update { it.copy(editingMsgId = null, editText = "", editPrefix = "") }
 
     // ---- deletion ----------------------------------------------------------
 
