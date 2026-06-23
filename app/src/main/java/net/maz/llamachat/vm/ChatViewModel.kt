@@ -107,14 +107,17 @@ class ChatViewModel(
 
     // ---- generation --------------------------------------------------------
 
-    private fun startGeneration(targetId: Long, includePartial: Boolean) {
+    private fun startGeneration(targetId: Long, includePartial: Boolean, forceContinue: Boolean = false) {
         streamJob?.cancel()
         streamJob = viewModelScope.launch {
             val s = settings.current()
             val conv = _ui.value.conversation ?: return@launch
             val idx = conv.messages.indexOfFirst { it.id == targetId }
             if (idx < 0) return@launch
-            val base = if (includePartial) conv.messages[idx].text else ""
+            // Trim trailing whitespace: a partial ending in a space/newline reads as
+            // a finished turn, making the model emit EOS immediately. Keep base and
+            // the prefill sent (buildApiMessages) consistent so deltas append cleanly.
+            val base = if (includePartial) conv.messages[idx].text.trimEnd() else ""
             val preset = conv.preset
             val request = ChatRequest(
                 model = conv.model.ifEmpty { s.currentModel },
@@ -123,6 +126,10 @@ class ChatViewModel(
                 // Stop before the model speaks for the user or restarts its own turn.
                 stop = if (conv.character.usesNamePrefixes)
                     listOf("${conv.userName}:", "${conv.characterName}:") else null,
+                // "Continue": ignore EOS so an already-complete-looking reply keeps
+                // going, capped so it can't run away (stop strings still apply).
+                maxTokens = if (forceContinue) 1000 else null,
+                ignoreEos = if (forceContinue) true else null,
                 temperature = preset.temperature,
                 topP = preset.topP,
                 topK = preset.topK,
@@ -178,7 +185,7 @@ class ChatViewModel(
             }
         }
         if (includePartial) {
-            val partial = conv.messages.getOrNull(assistantIndex)?.text.orEmpty()
+            val partial = conv.messages.getOrNull(assistantIndex)?.text.orEmpty().trimEnd()
             if (partial.isNotBlank()) out += ApiMessage("assistant", partial)
         }
         return out
@@ -207,7 +214,7 @@ class ChatViewModel(
     fun continueMessage(id: Long) {
         if (_ui.value.streaming) return
         _ui.update { it.copy(selectedMsgId = null) }
-        startGeneration(id, includePartial = true)
+        startGeneration(id, includePartial = true, forceContinue = true)
     }
 
     // ---- variants ----------------------------------------------------------
