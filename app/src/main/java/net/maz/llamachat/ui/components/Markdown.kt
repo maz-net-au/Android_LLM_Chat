@@ -38,18 +38,18 @@ fun MarkdownText(text: String, modifier: Modifier = Modifier) {
                     text = inlineAnnotated(block.text),
                     fontSize = 15.sp,
                     lineHeight = 23.sp,
-                    color = DcColors.OnSurface,
+                    color = BodyColor,
                     modifier = Modifier.padding(bottom = 6.dp),
                 )
                 is MdBlock.Bullets -> Column(modifier = Modifier.padding(vertical = 4.dp)) {
                     block.items.forEach { item ->
                         Row(modifier = Modifier.padding(vertical = 3.dp)) {
-                            Text("•", fontSize = 15.sp, color = DcColors.OnSurface, modifier = Modifier.padding(end = 8.dp))
+                            Text("•", fontSize = 15.sp, color = BodyColor, modifier = Modifier.padding(end = 8.dp))
                             Text(
                                 text = inlineAnnotated(item),
                                 fontSize = 15.sp,
                                 lineHeight = 23.sp,
-                                color = DcColors.OnSurface,
+                                color = BodyColor,
                             )
                         }
                     }
@@ -66,7 +66,7 @@ private fun CodeBlock(code: String) {
         text = code,
         fontFamily = FontFamily.Monospace,
         fontSize = 13.sp,
-        color = DcColors.OnSurface,
+        color = BodyColor,
         modifier = Modifier
             .padding(vertical = 8.dp)
             .background(DcColors.SurfaceTint, RoundedCornerShape(8.dp))
@@ -134,10 +134,13 @@ private val codeSpan = SpanStyle(
     color = DcColors.PrimaryDark,
 )
 private val boldSpan = SpanStyle(fontWeight = FontWeight.Bold)
+/** Slightly darker than the global OnSurface (.87) so message text reads crisper. */
+private val BodyColor = Color(0xF2000000) // rgba(0,0,0,.95)
+
 // System Roboto has no bundled italic face, so the synthesized slant is barely
-// visible — pair it with a lighter color so *italic* (e.g. roleplay *actions*)
-// reads as clearly distinct from body text.
-private val italicSpan = SpanStyle(fontStyle = FontStyle.Italic, color = DcColors.OnSurfaceMedium)
+// visible — pair it with a distinct color so *italic* (e.g. roleplay *actions*)
+// reads as clearly different from body text.
+private val italicSpan = SpanStyle(fontStyle = FontStyle.Italic, color = Color(0xFF3949AB)) // indigo
 
 /** Inline formatting matching the prototype's `inline()`: `code`, **bold**, *italic*. */
 private fun inlineAnnotated(src: String): AnnotatedString = buildAnnotatedString {
