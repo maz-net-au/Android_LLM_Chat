@@ -91,10 +91,13 @@ fun ChatScreen(
     val showActions = state.streaming || lastIsAssistant
 
     val listState = rememberLazyListState()
-    // Re-pin to the latest message on new content AND as the keyboard slides in/out
-    // (the IME bottom inset animates, so the list re-scrolls to stay glued to bottom).
+    // Re-pin to the latest message on new content, as the keyboard slides in/out (the
+    // IME bottom inset animates), and when the last message is selected — its inline
+    // action buttons appear below it and would otherwise sit under the Stop/Regenerate
+    // row. Selecting older messages doesn't re-scroll (it would jump jarringly).
     val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
-    LaunchedEffect(messages.size, messages.lastOrNull()?.text?.length, imeBottom) {
+    val lastSelected = state.selectedMsgId != null && state.selectedMsgId == messages.lastOrNull()?.id
+    LaunchedEffect(messages.size, messages.lastOrNull()?.text?.length, imeBottom, lastSelected) {
         if (messages.isNotEmpty()) listState.scrollToItem(messages.lastIndex)
     }
 
