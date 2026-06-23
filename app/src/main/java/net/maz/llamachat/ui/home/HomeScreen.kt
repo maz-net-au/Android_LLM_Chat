@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.outlined.Forum
@@ -58,6 +59,7 @@ fun HomeScreen(
     vm: HomeViewModel,
     onOpenConversation: (Long) -> Unit,
     onNewConversation: () -> Unit,
+    onManageCharacters: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -80,6 +82,9 @@ fun HomeScreen(
                 letterSpacing = 0.15.sp,
                 modifier = Modifier.weight(1f),
             )
+            IconButton(onClick = onManageCharacters) {
+                Icon(Icons.Filled.ManageAccounts, contentDescription = "Characters", tint = Color.White, modifier = Modifier.size(24.dp))
+            }
             IconButton(onClick = onDisconnect) {
                 Icon(Icons.Filled.LinkOff, contentDescription = "Disconnect", tint = Color.White, modifier = Modifier.size(22.dp))
             }

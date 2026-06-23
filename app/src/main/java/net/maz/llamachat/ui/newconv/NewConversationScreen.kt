@@ -166,7 +166,7 @@ private fun CharacterSelector(vm: NewConversationViewModel, selectedName: String
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(selected.name, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = DcColors.OnSurface)
-                Text(selected.description, fontSize = 12.sp, color = DcColors.OnSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(selected.subtitle(), fontSize = 12.sp, color = DcColors.OnSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = DcColors.OnSurfaceVariant, modifier = Modifier.size(22.dp))
         }
@@ -179,7 +179,7 @@ private fun CharacterSelector(vm: NewConversationViewModel, selectedName: String
                             Spacer(Modifier.width(12.dp))
                             Column {
                                 Text(c.name, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                                Text(c.description, fontSize = 12.sp, color = DcColors.OnSurfaceMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(c.subtitle(), fontSize = 12.sp, color = DcColors.OnSurfaceMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                         }
                     },

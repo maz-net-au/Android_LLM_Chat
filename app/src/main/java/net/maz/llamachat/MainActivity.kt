@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -29,13 +29,14 @@ class MainActivity : ComponentActivity() {
 private fun App() {
     LlamaChatTheme {
         // On a phone the app fills the screen (the prototype's 412×880 frame is
-        // just its design canvas); system bars are padded so content never sits
-        // under the status/nav bars.
+        // just its design canvas). safeDrawing pads the union of the system bars
+        // and the IME, so content never sits under the status/nav bars and the
+        // bottom input on any screen lifts above the on-screen keyboard.
         Surface(modifier = Modifier.fillMaxSize(), color = Color.White) {
             Box(
                 Modifier
                     .fillMaxSize()
-                    .windowInsetsPadding(WindowInsets.systemBars),
+                    .windowInsetsPadding(WindowInsets.safeDrawing),
             ) {
                 LlamaChatNavHost()
             }

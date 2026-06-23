@@ -19,6 +19,7 @@ class SettingsRepository(private val context: Context) {
         val IP = stringPreferencesKey("server_ip")
         val PORT = stringPreferencesKey("server_port")
         val CURRENT_MODEL = stringPreferencesKey("current_model")
+        val USER_NAME = stringPreferencesKey("user_name")
         val SEEDED = booleanPreferencesKey("seeded")
     }
 
@@ -26,6 +27,8 @@ class SettingsRepository(private val context: Context) {
         val ip: String,
         val port: String,
         val currentModel: String,
+        /** Substituted for `{{user}}` in character prompts and greetings. */
+        val userName: String,
     )
 
     val settings: Flow<Settings> = context.dataStore.data.map { prefs ->
@@ -33,6 +36,7 @@ class SettingsRepository(private val context: Context) {
             ip = prefs[Keys.IP] ?: "192.168.1.42",
             port = prefs[Keys.PORT] ?: "8080",
             currentModel = prefs[Keys.CURRENT_MODEL] ?: Catalog.fallbackModels.first(),
+            userName = prefs[Keys.USER_NAME]?.takeIf { it.isNotBlank() } ?: "User",
         )
     }
 

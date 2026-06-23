@@ -14,6 +14,7 @@ import net.maz.llamachat.data.ConversationRepository
 import net.maz.llamachat.data.IdGen
 import net.maz.llamachat.data.SettingsRepository
 import net.maz.llamachat.data.model.Catalog
+import net.maz.llamachat.data.model.ChatMessage
 import net.maz.llamachat.data.model.Conversation
 
 enum class NewMenu { NONE, CHARACTER, PRESET }
@@ -87,16 +88,21 @@ class NewConversationViewModel(
             } else {
                 val now = System.currentTimeMillis()
                 val id = IdGen.next()
+                val current = settings.current()
+                // Seed the character's greeting (if any) as the first assistant turn.
+                val greeting = Catalog.character(st.character).resolvedGreeting(current.userName)
+                val seed = greeting?.let { listOf(ChatMessage.assistant(IdGen.next(), it)) }
+                    ?: emptyList()
                 repo.save(
                     Conversation(
                         id = id,
                         title = title.ifEmpty { "New chat" },
                         characterName = st.character,
                         presetName = st.preset,
-                        model = st.model.ifEmpty { settings.current().currentModel },
+                        model = st.model.ifEmpty { current.currentModel },
                         createdAt = now,
                         updatedAt = now,
-                        messages = emptyList(),
+                        messages = seed,
                     ),
                 )
                 _state.update { it.copy(startedId = id) }

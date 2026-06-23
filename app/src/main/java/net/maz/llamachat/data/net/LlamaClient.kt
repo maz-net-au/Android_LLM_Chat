@@ -27,7 +27,10 @@ import java.util.concurrent.TimeUnit
  */
 class LlamaClient {
 
-    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+    // explicitNulls = false omits unset (null) sampler params so the server uses
+    // its own defaults; encodeDefaults keeps non-null defaults like stream = true.
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; explicitNulls = false }
     private val jsonMedia = "application/json".toMediaType()
 
     // Generation can pause between tokens, so the read timeout is disabled for

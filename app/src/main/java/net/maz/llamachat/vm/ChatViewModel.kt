@@ -112,12 +112,20 @@ class ChatViewModel(
             val preset = conv.preset
             val request = ChatRequest(
                 model = conv.model.ifEmpty { s.currentModel },
-                messages = buildApiMessages(conv, idx, includePartial),
+                messages = buildApiMessages(conv, idx, includePartial, s.userName),
                 stream = true,
                 temperature = preset.temperature,
                 topP = preset.topP,
                 topK = preset.topK,
+                minP = preset.minP,
+                typicalP = preset.typicalP,
                 repeatPenalty = preset.repeatPenalty,
+                repeatLastN = preset.repeatLastN,
+                presencePenalty = preset.presencePenalty,
+                frequencyPenalty = preset.frequencyPenalty,
+                mirostat = preset.mirostat,
+                mirostatTau = preset.mirostatTau,
+                mirostatEta = preset.mirostatEta,
             )
             _ui.update { it.copy(streaming = true) }
             val sb = StringBuilder(base)
@@ -150,9 +158,11 @@ class ChatViewModel(
         conv: Conversation,
         assistantIndex: Int,
         includePartial: Boolean,
+        userName: String,
     ): List<ApiMessage> {
         val out = ArrayList<ApiMessage>()
-        conv.character.systemPrompt?.let { out += ApiMessage("system", it) }
+        conv.character.resolvedContext(userName).takeIf { it.isNotBlank() }
+            ?.let { out += ApiMessage("system", it) }
         conv.messages.forEachIndexed { i, m ->
             if (i < assistantIndex) {
                 out += ApiMessage(if (m.role == Role.USER) "user" else "assistant", m.text)

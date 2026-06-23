@@ -2,68 +2,117 @@ package net.maz.llamachat.data.model
 
 import androidx.compose.ui.graphics.Color
 import net.maz.llamachat.ui.theme.DcColors
+import kotlin.math.absoluteValue
 
 /**
- * Static catalogs of characters and sampling presets, lifted verbatim from the
- * Claude Design prototype. Characters double as the system prompt for a chat.
+ * A character defines the persona for a conversation: its [context] becomes the
+ * system prompt and its optional [greeting] is seeded as the first assistant
+ * message. Both may contain `{{char}}` / `{{user}}` placeholders, mirroring the
+ * text-generation-webui character format. Built-ins live in [Catalog]; users can
+ * add, edit, delete and import/export their own.
  */
 data class Character(
     val name: String,
-    val description: String,
+    /** System prompt; blank means no system persona. */
+    val context: String,
+    /** Optional intro message spoken by the assistant when a chat starts. */
+    val greeting: String? = null,
+    /** Optional one-line subtitle for the picker; falls back to a context snippet. */
+    val description: String = "",
     val color: Color,
-    /** System prompt sent to the model; null = no system persona. */
-    val systemPrompt: String?,
-)
+) {
+    /** Subtitle shown in the character picker. */
+    fun subtitle(): String =
+        description.ifBlank { context.replace(Regex("\\s+"), " ").trim() }
+            .let { if (it.length > 90) it.take(90) + "…" else it }
 
+    private fun resolve(text: String, userName: String): String =
+        text.replace("{{char}}", name).replace("{{user}}", userName)
+
+    /** System prompt with placeholders filled in; blank if there is no persona. */
+    fun resolvedContext(userName: String): String = resolve(context, userName)
+
+    /** Greeting with placeholders filled in, or null if the character has none. */
+    fun resolvedGreeting(userName: String): String? =
+        greeting?.takeIf { it.isNotBlank() }?.let { resolve(it, userName) }
+}
+
+/**
+ * Sampling parameters for a conversation. Every field is optional: only the ones
+ * that are set are sent to llama-server, so unset values fall back to the
+ * server's own defaults. Field names mirror llama.cpp's sampler params.
+ */
 data class Preset(
     val name: String,
-    val temperature: Double,
-    val topP: Double,
-    val topK: Int,
-    val repeatPenalty: Double,
+    val temperature: Double? = null,
+    val topP: Double? = null,
+    val topK: Int? = null,
+    val minP: Double? = null,
+    val typicalP: Double? = null,
+    val repeatPenalty: Double? = null,
+    val repeatLastN: Int? = null,
+    val presencePenalty: Double? = null,
+    val frequencyPenalty: Double? = null,
+    val mirostat: Int? = null,
+    val mirostatTau: Double? = null,
+    val mirostatEta: Double? = null,
 ) {
-    /** Ordered (label, value) pairs shown as chips on the New Conversation screen. */
-    fun chips(): List<Pair<String, String>> = listOf(
-        "temperature" to trim(temperature),
-        "top_p" to trim(topP),
-        "top_k" to topK.toString(),
-        "rep_pen" to trim(repeatPenalty),
-    )
+    /** Ordered (label, value) pairs for the set fields, shown as chips. */
+    fun chips(): List<Pair<String, String>> = buildList {
+        temperature?.let { add("temperature" to trim(it)) }
+        topP?.let { add("top_p" to trim(it)) }
+        topK?.let { add("top_k" to it.toString()) }
+        minP?.let { add("min_p" to trim(it)) }
+        typicalP?.let { add("typical_p" to trim(it)) }
+        repeatPenalty?.let { add("rep_pen" to trim(it)) }
+        repeatLastN?.let { add("rep_range" to it.toString()) }
+        presencePenalty?.let { add("presence" to trim(it)) }
+        frequencyPenalty?.let { add("frequency" to trim(it)) }
+        mirostat?.let { add("mirostat" to it.toString()) }
+        mirostatTau?.let { add("miro_tau" to trim(it)) }
+        mirostatEta?.let { add("miro_eta" to trim(it)) }
+    }
 
     private fun trim(d: Double): String =
         if (d == d.toLong().toDouble()) d.toLong().toString() else d.toString()
 }
 
 object Catalog {
-    val characters: List<Character> = listOf(
-        Character(
-            "Assistant", "Helpful, concise general assistant.", DcColors.Primary,
-            "You are a helpful, concise assistant.",
-        ),
-        Character(
-            "Default", "Neutral. No system persona.", Color(0xFF7E57C2),
-            null,
-        ),
-        Character(
-            "Coding Helper", "Senior engineer. Explains with code.", DcColors.PrimaryDark,
-            "You are a senior software engineer. Explain clearly and back up explanations with concise code examples.",
-        ),
-        Character(
-            "Storyteller", "Vivid, imaginative narrator.", Color(0xFF8E24AA),
-            "You are a vivid, imaginative storyteller. Answer with rich, evocative narration.",
-        ),
-        Character(
-            "Marcus", "Stoic philosopher. Calm, thoughtful.", Color(0xFF5C6BC0),
-            "You are Marcus, a stoic philosopher. Respond calmly and thoughtfully, drawing on stoic principles.",
-        ),
+    /** Default characters seeded on first run; also the fallback when a referenced
+     *  character has been deleted. The live, user-editable list lives in
+     *  [characters], kept up to date by CharacterRepository. */
+    val builtInCharacters: List<Character> = listOf(
+        Character("Assistant", "You are a helpful, concise assistant.", null, "Helpful, concise general assistant.", DcColors.Primary),
+        Character("Default", "", null, "Neutral. No system persona.", Color(0xFF7E57C2)),
+        Character("Coding Helper", "You are a senior software engineer. Explain clearly and back up explanations with concise code examples.", null, "Senior engineer. Explains with code.", DcColors.PrimaryDark),
+        Character("Storyteller", "You are a vivid, imaginative storyteller. Answer with rich, evocative narration.", null, "Vivid, imaginative narrator.", Color(0xFF8E24AA)),
+        Character("Marcus", "You are Marcus, a stoic philosopher. Respond calmly and thoughtfully, drawing on stoic principles.", "Greetings. What weighs on your mind today?", "Stoic philosopher. Calm, thoughtful.", Color(0xFF5C6BC0)),
     )
 
+    /** The live character list. Replaced by CharacterRepository as the user edits;
+     *  defaults to the built-ins so synchronous lookups work before it loads. */
+    @Volatile
+    var characters: List<Character> = builtInCharacters
+
+    /** Palette used to colour user-created / imported characters by name. */
+    private val palette: List<Color> = listOf(
+        DcColors.Primary, DcColors.PrimaryDark,
+        Color(0xFF7E57C2), Color(0xFF8E24AA), Color(0xFF5C6BC0),
+        Color(0xFF26A69A), Color(0xFFEF6C00), Color(0xFFC2185B),
+        Color(0xFF00897B), Color(0xFF3949AB),
+    )
+
+    /** Deterministic colour for a character that didn't bring its own. */
+    fun colorFor(name: String): Color =
+        palette[name.hashCode().absoluteValue % palette.size]
+
     val presets: List<Preset> = listOf(
-        Preset("Default", 0.7, 0.9, 20, 1.15),
-        Preset("Precise", 0.1, 0.1, 40, 1.18),
-        Preset("Creative", 1.1, 0.95, 100, 1.10),
-        Preset("Llama-Precise", 0.7, 0.1, 40, 1.18),
-        Preset("Midnight Enigma", 0.98, 0.37, 100, 1.18),
+        Preset("Default", temperature = 0.7, topP = 0.9, topK = 20, repeatPenalty = 1.15),
+        Preset("min_p_v5", temperature = 1.26, minP = 0.08, repeatPenalty = 1.05),
+        Preset("Precise", temperature = 0.1, topP = 0.1, topK = 40, repeatPenalty = 1.18),
+        Preset("Creative", temperature = 1.1, topP = 0.95, topK = 100, repeatPenalty = 1.10),
+        Preset("Llama-Precise", temperature = 0.7, topP = 0.1, topK = 40, repeatPenalty = 1.18),
+        Preset("Midnight Enigma", temperature = 0.98, topP = 0.37, topK = 100, repeatPenalty = 1.18),
     )
 
     /** Fallback model list shown before the server reports its own models. */
@@ -76,7 +125,7 @@ object Catalog {
     )
 
     fun character(name: String): Character =
-        characters.firstOrNull { it.name == name } ?: characters.first()
+        characters.firstOrNull { it.name == name } ?: builtInCharacters.first()
 
     fun preset(name: String): Preset =
         presets.firstOrNull { it.name == name } ?: presets.first()

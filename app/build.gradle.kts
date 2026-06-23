@@ -78,5 +78,8 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp-sse:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
 
+    // YAML import/export of characters (text-generation-webui format)
+    implementation("org.yaml:snakeyaml:2.2")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

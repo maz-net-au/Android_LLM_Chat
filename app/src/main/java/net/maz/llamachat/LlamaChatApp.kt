@@ -1,6 +1,7 @@
 package net.maz.llamachat
 
 import android.app.Application
+import net.maz.llamachat.data.CharacterRepository
 import net.maz.llamachat.data.ConversationRepository
 import net.maz.llamachat.data.SettingsRepository
 import net.maz.llamachat.data.db.AppDatabase
@@ -25,8 +26,16 @@ class LlamaChatApp : Application() {
     val conversationRepository by lazy {
         ConversationRepository(AppDatabase.get(this).conversationDao())
     }
+    // Eagerly built so the character library is loaded (and Catalog.characters
+    // mirrored) before any screen resolves a conversation's character.
+    val characterRepository by lazy { CharacterRepository(this) }
     val llamaClient by lazy { LlamaClient() }
     val session = ServerSession()
+
+    override fun onCreate() {
+        super.onCreate()
+        characterRepository // touch to load the library at startup
+    }
 
     companion object {
         fun from(app: Application): LlamaChatApp = app as LlamaChatApp
