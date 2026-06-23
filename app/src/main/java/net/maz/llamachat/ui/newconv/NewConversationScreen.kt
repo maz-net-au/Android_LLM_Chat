@@ -103,18 +103,7 @@ fun NewConversationScreen(
 
             Spacer(Modifier.height(22.dp))
             SectionLabel("MODEL")
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(DcColors.SurfaceTintAlt, RoundedCornerShape(6.dp))
-                    .border(1.dp, DcColors.Divider, RoundedCornerShape(6.dp))
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Filled.Memory, contentDescription = null, tint = DcColors.OnSurfaceFaint, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(10.dp))
-                Text(vm.modelLabel(), fontSize = 13.sp, color = DcColors.OnSurfaceMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
+            ModelSelector(vm, selectedModel = state.model)
         }
 
         // Bottom action bar
@@ -233,6 +222,44 @@ private fun PresetSelector(vm: NewConversationViewModel, selectedName: String) {
                 Text(k, fontSize = 12.sp, color = DcColors.PrimaryDark.copy(alpha = 0.7f))
                 Spacer(Modifier.width(4.dp))
                 Text(v, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DcColors.PrimaryDark)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModelSelector(vm: NewConversationViewModel, selectedModel: String) {
+    var open by remember { mutableStateOf(false) }
+    val models = vm.models
+    Box {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(DcColors.SurfaceTint, RoundedCornerShape(6.dp))
+                .border(1.dp, DcColors.Outline, RoundedCornerShape(6.dp))
+                .clickable { open = true }
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Filled.Memory, contentDescription = null, tint = DcColors.Primary, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(10.dp))
+            Text(
+                Catalog.shortModel(selectedModel),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
+                color = DcColors.OnSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = DcColors.OnSurfaceVariant, modifier = Modifier.size(22.dp))
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            models.forEach { model ->
+                DropdownMenuItem(
+                    text = { Text(Catalog.shortModel(model), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    onClick = { vm.selectModel(model); open = false },
+                )
             }
         }
     }

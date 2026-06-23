@@ -64,6 +64,7 @@ class NewConversationViewModel(
     fun setTitle(v: String) = _state.update { it.copy(title = v) }
     fun selectCharacter(name: String) = _state.update { it.copy(character = name, openMenu = NewMenu.NONE) }
     fun selectPreset(name: String) = _state.update { it.copy(preset = name, openMenu = NewMenu.NONE) }
+    fun selectModel(model: String) = _state.update { it.copy(model = model) }
     fun toggleMenu(menu: NewMenu) = _state.update {
         it.copy(openMenu = if (it.openMenu == menu) NewMenu.NONE else menu)
     }
@@ -112,6 +113,8 @@ class NewConversationViewModel(
 
     val characters get() = Catalog.characters
     val presets get() = Catalog.presets
+    /** Models the server reported, falling back to the built-in list when offline. */
+    val models: List<String> get() = session.models.value.ifEmpty { Catalog.fallbackModels }
     fun modelLabel(): String = Catalog.shortModel(_state.value.model)
 
     companion object {

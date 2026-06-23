@@ -1,7 +1,6 @@
 package net.maz.llamachat.ui.home
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,18 +16,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.ManageAccounts
-import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.outlined.Forum
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -36,9 +29,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -48,7 +38,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import net.maz.llamachat.data.RelativeTime
-import net.maz.llamachat.data.model.Catalog
 import net.maz.llamachat.data.model.Conversation
 import net.maz.llamachat.ui.components.Avatar
 import net.maz.llamachat.ui.theme.DcColors
@@ -90,14 +79,6 @@ fun HomeScreen(
             }
         }
 
-        ModelSelector(
-            current = Catalog.shortModel(state.currentModel),
-            models = state.models,
-            selected = state.currentModel,
-            onSelect = vm::selectModel,
-        )
-        HorizontalDivider(color = DcColors.Divider)
-
         Box(Modifier.fillMaxSize()) {
             if (state.conversations.isEmpty()) {
                 EmptyConversations()
@@ -119,54 +100,6 @@ fun HomeScreen(
                     .size(56.dp),
             ) {
                 Icon(Icons.Filled.Add, contentDescription = "New conversation", modifier = Modifier.size(28.dp))
-            }
-        }
-    }
-}
-
-@Composable
-private fun ModelSelector(
-    current: String,
-    models: List<String>,
-    selected: String,
-    onSelect: (String) -> Unit,
-) {
-    var open by remember { mutableStateOf(false) }
-    Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 10.dp)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(DcColors.SurfaceTint, RoundedCornerShape(6.dp))
-                .border(1.dp, DcColors.Outline, RoundedCornerShape(6.dp))
-                .clickable { open = true }
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Filled.Memory, contentDescription = null, tint = DcColors.Primary, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text("Model", fontSize = 11.sp, color = DcColors.OnSurfaceVariant)
-                Text(current, fontSize = 14.sp, color = DcColors.OnSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = DcColors.OnSurfaceVariant, modifier = Modifier.size(22.dp))
-        }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            models.forEach { model ->
-                DropdownMenuItem(
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Filled.Check,
-                                contentDescription = null,
-                                tint = if (model == selected) DcColors.Primary else Color.Transparent,
-                                modifier = Modifier.size(18.dp),
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            Text(Catalog.shortModel(model), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                    },
-                    onClick = { onSelect(model); open = false },
-                )
             }
         }
     }

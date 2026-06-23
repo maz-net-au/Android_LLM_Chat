@@ -134,7 +134,10 @@ private val codeSpan = SpanStyle(
     color = DcColors.PrimaryDark,
 )
 private val boldSpan = SpanStyle(fontWeight = FontWeight.Bold)
-private val italicSpan = SpanStyle(fontStyle = FontStyle.Italic)
+// System Roboto has no bundled italic face, so the synthesized slant is barely
+// visible — pair it with a lighter color so *italic* (e.g. roleplay *actions*)
+// reads as clearly distinct from body text.
+private val italicSpan = SpanStyle(fontStyle = FontStyle.Italic, color = DcColors.OnSurfaceMedium)
 
 /** Inline formatting matching the prototype's `inline()`: `code`, **bold**, *italic*. */
 private fun inlineAnnotated(src: String): AnnotatedString = buildAnnotatedString {
