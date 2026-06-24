@@ -43,19 +43,26 @@ object ChatRequestBuilder {
     }
 
     /**
-     * Request that *suggests* the user's next line. The whole conversation is sent
-     * as-is, then a blank user turn — carrying just the user's "Name:" prefix in
-     * transcript mode — is appended as the final message and continued, so the
-     * model writes for the user. The streamed text goes into the input box: when
-     * the user hits send it becomes a normal user message after the last reply.
-     * The character's "Name:" stop sequence keeps it from writing the reply too.
+     * Request that *suggests* the user's next line, the chat-completions
+     * equivalent of text-generation-webui's "Impersonate" (which appends "You:"
+     * to its raw prompt and continues). llama-server only continues a trailing
+     * *assistant* message, so we fold the user's "Name:" prefix onto the final
+     * assistant turn and continue it: the model writes the user's line as a
+     * transcript continuation, stopping at the character's "Name:". Only
+     * meaningful in transcript mode (a character with name prefixes); the streamed
+     * text goes into the input box for the user to send as their own turn.
      */
     fun impersonate(conv: Conversation, s: SettingsRepository.Settings): ChatRequest {
         val out = ArrayList<ApiMessage>()
         systemMessage(conv)?.let { out += it }
-        conv.messages.forEach { m -> out += apiMessage(m.role, m.text) }
-        val prefill = if (conv.character.usesNamePrefixes) "${conv.userName}:" else ""
-        out += ApiMessage("user", prefill)
+        val last = conv.messages.lastIndex
+        conv.messages.forEachIndexed { i, m ->
+            if (i == last && m.role == Role.ASSISTANT && conv.character.usesNamePrefixes) {
+                out += ApiMessage("assistant", m.text.trimEnd() + "\n${conv.userName}: ")
+            } else {
+                out += apiMessage(m.role, m.text)
+            }
+        }
         return request(conv, out, s, maxTokens = 1000, ignoreEos = true)
     }
 

@@ -156,6 +156,9 @@ fun ChatScreen(
                 streaming = state.streaming,
                 impersonating = state.impersonating,
                 regenerateEnabled = !state.streaming && !state.impersonating && lastIsAssistant,
+                // Impersonation continues the transcript, so it only makes sense for
+                // characters that use "Name:" prefixes (roleplay-style chats).
+                showImpersonate = character?.usesNamePrefixes == true,
                 impersonateEnabled = !state.streaming && lastIsAssistant,
                 onStop = vm::stop,
                 onRegenerate = vm::regenerate,
@@ -414,6 +417,7 @@ private fun ActionRow(
     streaming: Boolean,
     impersonating: Boolean,
     regenerateEnabled: Boolean,
+    showImpersonate: Boolean,
     impersonateEnabled: Boolean,
     onStop: () -> Unit,
     onRegenerate: () -> Unit,
@@ -424,15 +428,17 @@ private fun ActionRow(
         horizontalArrangement = Arrangement.End,
     ) {
         PillButton("Stop", Icons.Filled.Stop, enabled = streaming, borderColor = DcColors.OnSurface.copy(alpha = 0.2f), contentColor = DcColors.OnSurface.copy(alpha = 0.75f), onClick = onStop)
-        Spacer(Modifier.width(8.dp))
-        PillButton(
-            label = if (impersonating) "Stop" else "Impersonate",
-            icon = if (impersonating) Icons.Filled.Stop else Icons.Filled.Person,
-            enabled = impersonateEnabled,
-            borderColor = DcColors.OnSurface.copy(alpha = 0.2f),
-            contentColor = DcColors.OnSurface.copy(alpha = 0.75f),
-            onClick = onImpersonate,
-        )
+        if (showImpersonate) {
+            Spacer(Modifier.width(8.dp))
+            PillButton(
+                label = if (impersonating) "Stop" else "Impersonate",
+                icon = if (impersonating) Icons.Filled.Stop else Icons.Filled.Person,
+                enabled = impersonateEnabled,
+                borderColor = DcColors.OnSurface.copy(alpha = 0.2f),
+                contentColor = DcColors.OnSurface.copy(alpha = 0.75f),
+                onClick = onImpersonate,
+            )
+        }
         Spacer(Modifier.width(8.dp))
         PillButton("Regenerate", Icons.Filled.Refresh, enabled = regenerateEnabled, borderColor = DcColors.Primary, contentColor = DcColors.Primary, onClick = onRegenerate)
     }
