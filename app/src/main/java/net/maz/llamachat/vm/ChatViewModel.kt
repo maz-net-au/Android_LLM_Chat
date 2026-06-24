@@ -166,27 +166,26 @@ class ChatViewModel(
         GenerationService.start(app, convId, id, includePartial = true, forceContinue = true, title = base?.title ?: "")
     }
 
-    /** Stop the in-flight reply. The service preserves the partial and removes
-     *  its notification; the UI's streaming flag clears via the controller. */
+    /** Stop whatever is in flight — the reply generation and/or an impersonation.
+     *  The service preserves a reply's partial and removes its notification; the
+     *  UI's streaming flag clears via the controller, and an impersonation keeps
+     *  whatever it had written into the input. */
     fun stop() {
         GenerationService.cancel(app)
+        impersonateJob?.cancel()
     }
 
     // ---- impersonate -------------------------------------------------------
 
     private var impersonateJob: Job? = null
 
-    /** Start impersonating if idle, or stop an impersonation already in flight. */
-    fun toggleImpersonate() {
-        if (local.value.impersonating) stopImpersonate() else impersonate()
-    }
-
     /**
      * Generate the user's next turn and stream it into the input box (rather than
      * committing it as a message), so the user can review and edit before sending.
-     * Runs in the screen's scope — cancelled if the user leaves the chat.
+     * Runs in the screen's scope — cancelled if the user leaves the chat or hits
+     * the shared Stop button.
      */
-    private fun impersonate() {
+    fun impersonate() {
         if (isStreaming() || local.value.impersonating) return
         val conv = base ?: return
         local.update { it.copy(impersonating = true, input = "", selectedMsgId = null, chatMenuOpen = false) }
@@ -207,11 +206,6 @@ class ChatViewModel(
                 local.update { it.copy(input = it.input.trim(), impersonating = false) }
             }
         }
-    }
-
-    private fun stopImpersonate() {
-        impersonateJob?.cancel()
-        local.update { it.copy(impersonating = false) }
     }
 
     // ---- variants ----------------------------------------------------------

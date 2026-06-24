@@ -159,10 +159,10 @@ fun ChatScreen(
                 // Impersonation continues the transcript, so it only makes sense for
                 // characters that use "Name:" prefixes (roleplay-style chats).
                 showImpersonate = character?.usesNamePrefixes == true,
-                impersonateEnabled = !state.streaming && lastIsAssistant,
+                impersonateEnabled = !state.streaming && !state.impersonating && lastIsAssistant,
                 onStop = vm::stop,
                 onRegenerate = vm::regenerate,
-                onImpersonate = vm::toggleImpersonate,
+                onImpersonate = vm::impersonate,
             )
         }
 
@@ -427,12 +427,12 @@ private fun ActionRow(
         modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 8.dp),
         horizontalArrangement = Arrangement.End,
     ) {
-        PillButton("Stop", Icons.Filled.Stop, enabled = streaming, borderColor = DcColors.OnSurface.copy(alpha = 0.2f), contentColor = DcColors.OnSurface.copy(alpha = 0.75f), onClick = onStop)
+        PillButton("Stop", Icons.Filled.Stop, enabled = streaming || impersonating, borderColor = DcColors.OnSurface.copy(alpha = 0.2f), contentColor = DcColors.OnSurface.copy(alpha = 0.75f), onClick = onStop)
         if (showImpersonate) {
             Spacer(Modifier.width(8.dp))
             PillButton(
-                label = if (impersonating) "Stop" else "Impersonate",
-                icon = if (impersonating) Icons.Filled.Stop else Icons.Filled.Person,
+                label = "Impersonate",
+                icon = Icons.Filled.Person,
                 enabled = impersonateEnabled,
                 borderColor = DcColors.OnSurface.copy(alpha = 0.2f),
                 contentColor = DcColors.OnSurface.copy(alpha = 0.75f),
