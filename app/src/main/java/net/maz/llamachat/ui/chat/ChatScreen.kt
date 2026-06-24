@@ -54,12 +54,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -92,14 +97,17 @@ fun ChatScreen(
     val showActions = state.streaming || lastIsAssistant
 
     val listState = rememberLazyListState()
-    // Re-pin to the latest message on new content, as the keyboard slides in/out (the
+    // Re-pin to the bottom of the latest message on new content (so a streaming
+    // reply's tail stays visible as it grows), as the keyboard slides in/out (the
     // IME bottom inset animates), and when the last message is selected — its inline
     // action buttons appear below it and would otherwise sit under the Stop/Regenerate
     // row. Selecting older messages doesn't re-scroll (it would jump jarringly).
     val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
     val lastSelected = state.selectedMsgId != null && state.selectedMsgId == messages.lastOrNull()?.id
     LaunchedEffect(messages.size, messages.lastOrNull()?.text?.length, imeBottom, lastSelected) {
-        if (messages.isNotEmpty()) listState.scrollToItem(messages.lastIndex)
+        // A large scroll offset lands at the end of the content, keeping the tail
+        // of a long (taller-than-viewport) last message in view rather than its top.
+        if (messages.isNotEmpty()) listState.scrollToItem(messages.lastIndex, Int.MAX_VALUE)
     }
 
     Column(Modifier.fillMaxSize().background(Color.White)) {
@@ -463,6 +471,14 @@ private fun PillButton(label: String, icon: androidx.compose.ui.graphics.vector.
 
 @Composable
 private fun InputBar(input: String, sendEnabled: Boolean, onInputChange: (String) -> Unit, onSend: () -> Unit) {
+    // Mirror the String input in a TextFieldValue so external updates (impersonation
+    // streaming, send-clear, prompt restore) can drop the caret at the end — that's
+    // what makes the field scroll to reveal the freshly appended tail. Typing keeps
+    // its own caret, because then input already equals the field's text (no reset).
+    var field by remember { mutableStateOf(TextFieldValue(input)) }
+    LaunchedEffect(input) {
+        if (input != field.text) field = TextFieldValue(input, TextRange(input.length))
+    }
     Row(
         modifier = Modifier.fillMaxWidth().border(0.dp, Color.Transparent).padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 10.dp),
         verticalAlignment = Alignment.Bottom,
@@ -474,14 +490,17 @@ private fun InputBar(input: String, sendEnabled: Boolean, onInputChange: (String
                 .padding(horizontal = 16.dp, vertical = 10.dp),
         ) {
             BasicTextField(
-                value = input,
-                onValueChange = onInputChange,
+                value = field,
+                onValueChange = {
+                    field = it
+                    if (it.text != input) onInputChange(it.text)
+                },
                 textStyle = LocalTextStyle.current.copy(fontSize = 15.sp, color = DcColors.OnSurface, lineHeight = 21.sp),
                 cursorBrush = SolidColor(DcColors.Primary),
                 maxLines = 6,
                 modifier = Modifier.fillMaxWidth(),
                 decorationBox = { inner ->
-                    if (input.isEmpty()) Text("Message…", color = DcColors.OnSurfaceFaint, fontSize = 15.sp)
+                    if (field.text.isEmpty()) Text("Message…", color = DcColors.OnSurfaceFaint, fontSize = 15.sp)
                     inner()
                 },
             )
