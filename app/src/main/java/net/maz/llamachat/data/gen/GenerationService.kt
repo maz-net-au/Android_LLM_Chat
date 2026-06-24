@@ -30,10 +30,6 @@ import net.maz.llamachat.MainActivity
 import net.maz.llamachat.R
 import net.maz.llamachat.data.ConversationRepository
 import net.maz.llamachat.data.SettingsRepository
-import net.maz.llamachat.data.model.Conversation
-import net.maz.llamachat.data.model.Role
-import net.maz.llamachat.data.net.ApiMessage
-import net.maz.llamachat.data.net.ChatRequest
 
 /**
  * Foreground service that owns an in-flight reply generation so it survives the
@@ -124,7 +120,7 @@ class GenerationService : Service() {
             forceContinue -> conv.messages[idx].text.trimEnd()
             else -> conv.messages[idx].text
         }
-        val request = buildRequest(conv, idx, includePartial, forceContinue, s)
+        val request = ChatRequestBuilder.reply(conv, idx, includePartial, forceContinue, s)
 
         val token = controller.begin(convId, targetId, base)
         val sb = StringBuilder(base)
@@ -172,62 +168,6 @@ class GenerationService : Service() {
                 messages = conv.messages.map { if (it.id == targetId) it.withText(text) else it },
             ),
         )
-    }
-
-    // ---- request building (ported from ChatViewModel) ----------------------
-
-    private fun buildRequest(
-        conv: Conversation,
-        assistantIndex: Int,
-        includePartial: Boolean,
-        forceContinue: Boolean,
-        s: SettingsRepository.Settings,
-    ): ChatRequest {
-        val preset = conv.preset
-        return ChatRequest(
-            model = conv.model.ifEmpty { s.currentModel },
-            messages = buildApiMessages(conv, assistantIndex, includePartial, conv.userName, forceContinue),
-            stream = true,
-            stop = if (conv.character.usesNamePrefixes)
-                listOf("${conv.userName}:", "${conv.characterName}:") else null,
-            maxTokens = if (forceContinue) 1000 else null,
-            ignoreEos = if (forceContinue) true else null,
-            temperature = preset.temperature,
-            topP = preset.topP,
-            topK = preset.topK,
-            minP = preset.minP,
-            typicalP = preset.typicalP,
-            repeatPenalty = preset.repeatPenalty,
-            repeatLastN = preset.repeatLastN,
-            presencePenalty = preset.presencePenalty,
-            frequencyPenalty = preset.frequencyPenalty,
-            mirostat = preset.mirostat,
-            mirostatTau = preset.mirostatTau,
-            mirostatEta = preset.mirostatEta,
-        )
-    }
-
-    private fun buildApiMessages(
-        conv: Conversation,
-        assistantIndex: Int,
-        includePartial: Boolean,
-        userName: String,
-        forceContinue: Boolean,
-    ): List<ApiMessage> {
-        val out = ArrayList<ApiMessage>()
-        conv.character.resolvedContext(userName).takeIf { it.isNotBlank() }
-            ?.let { out += ApiMessage("system", it) }
-        conv.messages.forEachIndexed { i, m ->
-            if (i < assistantIndex) {
-                out += ApiMessage(if (m.role == Role.USER) "user" else "assistant", m.text)
-            }
-        }
-        if (includePartial) {
-            val raw = conv.messages.getOrNull(assistantIndex)?.text.orEmpty()
-            val partial = if (forceContinue) raw.trimEnd() else raw
-            if (partial.isNotBlank()) out += ApiMessage("assistant", partial)
-        }
-        return out
     }
 
     // ---- foreground notification -------------------------------------------

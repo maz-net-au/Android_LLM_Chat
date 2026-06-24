@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -14,6 +16,7 @@ import kotlinx.coroutines.launch
 import net.maz.llamachat.LlamaChatApp
 import net.maz.llamachat.data.ConversationRepository
 import net.maz.llamachat.data.IdGen
+import net.maz.llamachat.data.gen.ChatRequestBuilder
 import net.maz.llamachat.data.gen.GenerationController
 import net.maz.llamachat.data.gen.GenerationService
 import net.maz.llamachat.data.model.ChatMessage
@@ -25,6 +28,8 @@ data class ChatUiState(
     val conversation: Conversation? = null,
     val input: String = "",
     val streaming: Boolean = false,
+    /** True while an "Impersonate" generation is streaming the user's turn into [input]. */
+    val impersonating: Boolean = false,
     val selectedMsgId: Long? = null,
     val editingMsgId: Long? = null,
     val editText: String = "",
@@ -56,6 +61,7 @@ class ChatViewModel(
     /** Transient, screen-only state that never touches Room. */
     private data class Local(
         val input: String = "",
+        val impersonating: Boolean = false,
         val selectedMsgId: Long? = null,
         val editingMsgId: Long? = null,
         val editText: String = "",
@@ -86,6 +92,7 @@ class ChatViewModel(
                 conversation = merged,
                 input = l.input,
                 streaming = streaming,
+                impersonating = l.impersonating,
                 selectedMsgId = l.selectedMsgId,
                 editingMsgId = l.editingMsgId,
                 editText = l.editText,
@@ -107,13 +114,15 @@ class ChatViewModel(
     fun setInput(v: String) = local.update { it.copy(input = v) }
 
     fun send() {
+        if (isStreaming()) return
+        // A blank message is allowed: it appends an empty user turn and forces the
+        // assistant to take another turn.
         val text = local.value.input.trim()
-        if (text.isEmpty() || isStreaming()) return
         val conv = base ?: return
         val prefixes = conv.character.usesNamePrefixes
         val userId = IdGen.next()
         val assistantId = IdGen.next()
-        val title = if (conv.title == "New chat") deriveTitle(text) else conv.title
+        val title = if (conv.title == "New chat" && text.isNotEmpty()) deriveTitle(text) else conv.title
         val updated = conv.copy(
             title = title,
             updatedAt = System.currentTimeMillis(),
@@ -161,6 +170,48 @@ class ChatViewModel(
      *  its notification; the UI's streaming flag clears via the controller. */
     fun stop() {
         GenerationService.cancel(app)
+    }
+
+    // ---- impersonate -------------------------------------------------------
+
+    private var impersonateJob: Job? = null
+
+    /** Start impersonating if idle, or stop an impersonation already in flight. */
+    fun toggleImpersonate() {
+        if (local.value.impersonating) stopImpersonate() else impersonate()
+    }
+
+    /**
+     * Generate the user's next turn and stream it into the input box (rather than
+     * committing it as a message), so the user can review and edit before sending.
+     * Runs in the screen's scope — cancelled if the user leaves the chat.
+     */
+    private fun impersonate() {
+        if (isStreaming() || local.value.impersonating) return
+        val conv = base ?: return
+        local.update { it.copy(impersonating = true, input = "", selectedMsgId = null, chatMenuOpen = false) }
+        impersonateJob = viewModelScope.launch {
+            val s = app.settingsRepository.current()
+            val request = ChatRequestBuilder.impersonate(conv, s)
+            val sb = StringBuilder()
+            try {
+                app.llamaClient.streamChat(s.ip, s.port, request).collect { delta ->
+                    sb.append(delta)
+                    local.update { it.copy(input = sb.toString().trimStart()) }
+                }
+            } catch (_: CancellationException) {
+                // Stop pressed or screen left: keep whatever was written so far.
+            } catch (_: Exception) {
+                // Leave the partial in the input; nothing else to surface here.
+            } finally {
+                local.update { it.copy(input = it.input.trim(), impersonating = false) }
+            }
+        }
+    }
+
+    private fun stopImpersonate() {
+        impersonateJob?.cancel()
+        local.update { it.copy(impersonating = false) }
     }
 
     // ---- variants ----------------------------------------------------------

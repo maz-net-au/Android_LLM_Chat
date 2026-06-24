@@ -40,17 +40,14 @@ fun LlamaChatNavHost() {
     val navController = rememberNavController()
     val app = LocalContext.current.applicationContext as LlamaChatApp
 
-    NavHost(navController = navController, startDestination = Routes.CONNECT) {
+    NavHost(navController = navController, startDestination = Routes.HOME) {
 
         composable(Routes.CONNECT) {
             val vm: ConnectViewModel = viewModel(factory = ConnectViewModel.factory(app))
             ConnectScreen(
                 vm = vm,
-                onConnected = {
-                    navController.navigate(Routes.HOME) {
-                        popUpTo(Routes.CONNECT) { inclusive = true }
-                    }
-                },
+                // Reached from Home (the start screen); return there once connected.
+                onConnected = { navController.popBackStack(Routes.HOME, inclusive = false) },
             )
         }
 
@@ -61,12 +58,7 @@ fun LlamaChatNavHost() {
                 onOpenConversation = { id -> navController.navigate(Routes.chat(id)) },
                 onNewConversation = { navController.navigate(Routes.NEW) },
                 onManageCharacters = { navController.navigate(Routes.CHARACTERS) },
-                onDisconnect = {
-                    vm.disconnect()
-                    navController.navigate(Routes.CONNECT) {
-                        popUpTo(Routes.HOME) { inclusive = true }
-                    }
-                },
+                onOpenServer = { navController.navigate(Routes.CONNECT) },
             )
         }
 

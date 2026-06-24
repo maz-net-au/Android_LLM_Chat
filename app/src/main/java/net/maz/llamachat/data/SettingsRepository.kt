@@ -19,6 +19,7 @@ class SettingsRepository(private val context: Context) {
         val IP = stringPreferencesKey("server_ip")
         val PORT = stringPreferencesKey("server_port")
         val CURRENT_MODEL = stringPreferencesKey("current_model")
+        val CURRENT_PRESET = stringPreferencesKey("current_preset")
         val USER_NAME = stringPreferencesKey("user_name")
         val SEEDED = booleanPreferencesKey("seeded")
     }
@@ -27,6 +28,8 @@ class SettingsRepository(private val context: Context) {
         val ip: String,
         val port: String,
         val currentModel: String,
+        /** Last selected preset; the default for new conversations. */
+        val currentPreset: String,
         /** Default name for new conversations' `{{user}}`; the last name the user set. */
         val userName: String,
     )
@@ -36,6 +39,7 @@ class SettingsRepository(private val context: Context) {
             ip = prefs[Keys.IP] ?: "192.168.1.42",
             port = prefs[Keys.PORT] ?: "8080",
             currentModel = prefs[Keys.CURRENT_MODEL] ?: Catalog.fallbackModels.first(),
+            currentPreset = prefs[Keys.CURRENT_PRESET] ?: Catalog.presets.first().name,
             userName = prefs[Keys.USER_NAME]?.takeIf { it.isNotBlank() } ?: "user",
         )
     }
@@ -51,6 +55,11 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setCurrentModel(model: String) {
         context.dataStore.edit { it[Keys.CURRENT_MODEL] = model }
+    }
+
+    /** Remember the most recently selected preset as the default for new conversations. */
+    suspend fun setCurrentPreset(preset: String) {
+        context.dataStore.edit { it[Keys.CURRENT_PRESET] = preset }
     }
 
     /** Remember the most recently used name as the default for future conversations. */

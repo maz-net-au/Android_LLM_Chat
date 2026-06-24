@@ -59,7 +59,13 @@ class NewConversationViewModel(
                     }
                 }
             } else {
-                _state.update { it.copy(model = current.currentModel, userName = current.userName) }
+                _state.update {
+                    it.copy(
+                        model = current.currentModel,
+                        preset = current.currentPreset,
+                        userName = current.userName,
+                    )
+                }
             }
         }
     }
@@ -78,8 +84,10 @@ class NewConversationViewModel(
         val title = st.title.trim()
         val userName = st.userName.trim().ifEmpty { "user" }
         viewModelScope.launch {
-            // Remember this name as the default for future conversations.
+            // Remember this name, model and preset as the defaults for future conversations.
             settings.setUserName(userName)
+            settings.setCurrentPreset(st.preset)
+            st.model.takeIf { it.isNotEmpty() }?.let { settings.setCurrentModel(it) }
             if (st.editing && editConvId != null) {
                 repo.get(editConvId)?.let { existing ->
                     repo.save(

@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
@@ -153,15 +154,20 @@ fun ChatScreen(
         if (showActions) {
             ActionRow(
                 streaming = state.streaming,
-                regenerateEnabled = !state.streaming && lastIsAssistant,
+                impersonating = state.impersonating,
+                regenerateEnabled = !state.streaming && !state.impersonating && lastIsAssistant,
+                impersonateEnabled = !state.streaming && lastIsAssistant,
                 onStop = vm::stop,
                 onRegenerate = vm::regenerate,
+                onImpersonate = vm::toggleImpersonate,
             )
         }
 
         InputBar(
             input = state.input,
-            sendEnabled = state.input.isNotBlank() && !state.streaming,
+            // Blank sends are allowed (forces the assistant to take another turn);
+            // only an in-flight reply or impersonation disables the button.
+            sendEnabled = !state.streaming && !state.impersonating,
             onInputChange = vm::setInput,
             onSend = vm::send,
         )
@@ -404,12 +410,29 @@ private fun TextActionButton(label: String, color: Color, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ActionRow(streaming: Boolean, regenerateEnabled: Boolean, onStop: () -> Unit, onRegenerate: () -> Unit) {
+private fun ActionRow(
+    streaming: Boolean,
+    impersonating: Boolean,
+    regenerateEnabled: Boolean,
+    impersonateEnabled: Boolean,
+    onStop: () -> Unit,
+    onRegenerate: () -> Unit,
+    onImpersonate: () -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 8.dp),
         horizontalArrangement = Arrangement.End,
     ) {
         PillButton("Stop", Icons.Filled.Stop, enabled = streaming, borderColor = DcColors.OnSurface.copy(alpha = 0.2f), contentColor = DcColors.OnSurface.copy(alpha = 0.75f), onClick = onStop)
+        Spacer(Modifier.width(8.dp))
+        PillButton(
+            label = if (impersonating) "Stop" else "Impersonate",
+            icon = if (impersonating) Icons.Filled.Stop else Icons.Filled.Person,
+            enabled = impersonateEnabled,
+            borderColor = DcColors.OnSurface.copy(alpha = 0.2f),
+            contentColor = DcColors.OnSurface.copy(alpha = 0.75f),
+            onClick = onImpersonate,
+        )
         Spacer(Modifier.width(8.dp))
         PillButton("Regenerate", Icons.Filled.Refresh, enabled = regenerateEnabled, borderColor = DcColors.Primary, contentColor = DcColors.Primary, onClick = onRegenerate)
     }
