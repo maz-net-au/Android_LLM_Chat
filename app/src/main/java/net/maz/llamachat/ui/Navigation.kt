@@ -12,6 +12,7 @@ import androidx.navigation.navArgument
 import net.maz.llamachat.LlamaChatApp
 import net.maz.llamachat.ui.characters.CharacterEditScreen
 import net.maz.llamachat.ui.characters.CharacterListScreen
+import net.maz.llamachat.ui.characters.GeneratorScreen
 import net.maz.llamachat.ui.chat.ChatScreen
 import net.maz.llamachat.ui.connect.ConnectScreen
 import net.maz.llamachat.ui.home.HomeScreen
@@ -19,6 +20,7 @@ import net.maz.llamachat.ui.newconv.NewConversationScreen
 import net.maz.llamachat.vm.CharacterViewModel
 import net.maz.llamachat.vm.ChatViewModel
 import net.maz.llamachat.vm.ConnectViewModel
+import net.maz.llamachat.vm.GeneratorViewModel
 import net.maz.llamachat.vm.HomeViewModel
 import net.maz.llamachat.vm.NewConversationViewModel
 
@@ -29,6 +31,7 @@ object Routes {
     const val CHAT = "chat"
     const val CHARACTERS = "characters"
     const val CHARACTER_EDIT = "character_edit"
+    const val CHARACTER_GENERATE = "character_generate"
     fun chat(id: Long) = "$CHAT/$id"
     fun newConv(editId: Long? = null) = if (editId == null) NEW else "$NEW?convId=$editId"
     fun editCharacter(name: String? = null) =
@@ -87,6 +90,17 @@ fun LlamaChatNavHost() {
                 onBack = { navController.popBackStack() },
                 onEdit = { name -> navController.navigate(Routes.editCharacter(name)) },
                 onCreate = { navController.navigate(Routes.editCharacter()) },
+                onGenerate = { navController.navigate(Routes.CHARACTER_GENERATE) },
+            )
+        }
+
+        composable(Routes.CHARACTER_GENERATE) {
+            val vm: GeneratorViewModel = viewModel(factory = GeneratorViewModel.factory(app))
+            GeneratorScreen(
+                vm = vm,
+                onBack = { navController.popBackStack() },
+                // The saved character lands in the list we came from.
+                onSaved = { navController.popBackStack() },
             )
         }
 

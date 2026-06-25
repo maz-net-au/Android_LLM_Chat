@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
@@ -59,6 +60,7 @@ fun CharacterListScreen(
     onBack: () -> Unit,
     onEdit: (String) -> Unit,
     onCreate: () -> Unit,
+    onGenerate: () -> Unit,
 ) {
     val characters by vm.characters.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -112,6 +114,9 @@ fun CharacterListScreen(
             }
             Spacer(Modifier.width(4.dp))
             Text("Characters", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+            IconButton(onClick = onGenerate) {
+                Icon(Icons.Filled.Casino, contentDescription = "Generate a character", tint = Color.White, modifier = Modifier.size(22.dp))
+            }
             IconButton(onClick = { importLauncher.launch(arrayOf("*/*")) }) {
                 Icon(Icons.Filled.FileUpload, contentDescription = "Import", tint = Color.White, modifier = Modifier.size(22.dp))
             }
