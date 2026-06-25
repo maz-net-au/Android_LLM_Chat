@@ -20,7 +20,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
@@ -38,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
@@ -226,8 +229,9 @@ private fun PresetSelector(
         }
     }
 
-    // Editable parameters: each field overrides the preset for this chat only.
-    // Blank fields inherit the preset value (shown as the placeholder).
+    // Per-chat overrides as a compact list: only the params you've actually changed
+    // show, each editable and removable with ×. The "+ Add override" picker offers the
+    // rest, prefilled with the value they'd otherwise inherit so the row is meaningful.
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -250,58 +254,60 @@ private fun PresetSelector(
             )
         }
     }
-    SamplingParam.entries.forEach { param ->
-        val presetValue = param.fromPreset(selected)?.let { formatSampling(it) }
-        val defaultValue = formatSampling(param.default)
-        val offValue = param.off?.let { formatSampling(it) }
-        // Blank inherits the preset's value, or the model default when the preset
-        // leaves it unset. The caption surfaces the values you'd type to revert
-        // (default) or switch the sampler off — omitting whichever already shows.
-        val placeholder = presetValue ?: defaultValue
-        val hint = buildList {
-            if (presetValue != null && presetValue != defaultValue) add("default $defaultValue")
-            if (offValue != null && offValue != placeholder) add("off $offValue")
-        }.joinToString(" · ").ifBlank { null }
-        ParamRow(
+
+    val active = SamplingParam.entries.filter { it in samplingText }
+    if (active.isEmpty()) {
+        Text(
+            "Using the preset's values. Add an override to tweak just this chat.",
+            fontSize = 12.sp,
+            color = DcColors.OnSurfaceFaint,
+            modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
+        )
+    }
+    active.forEach { param ->
+        val placeholder = param.fromPreset(selected)?.let { formatSampling(it) }
+            ?: formatSampling(param.default)
+        OverrideRow(
             label = param.label,
             value = samplingText[param].orEmpty(),
             placeholder = placeholder,
-            hint = hint,
             isInt = param.isInt,
             onValueChange = { vm.setSamplingParam(param, it) },
+            onRemove = { vm.setSamplingParam(param, "") },
         )
     }
+
+    AddOverrideButton(
+        available = SamplingParam.entries.filter { it !in samplingText },
+        onAdd = { param ->
+            // Seed the new override with what it would otherwise inherit, so adding it
+            // changes nothing until edited — and the field is never blank-on-arrival.
+            val prefill = param.fromPreset(selected)?.let { formatSampling(it) }
+                ?: formatSampling(param.default)
+            vm.setSamplingParam(param, prefill)
+        },
+    )
 }
 
 @Composable
-private fun ParamRow(
+private fun OverrideRow(
     label: String,
     value: String,
     placeholder: String,
-    hint: String?,
     isInt: Boolean,
     onValueChange: (String) -> Unit,
+    onRemove: () -> Unit,
 ) {
-    val overridden = value.isNotBlank()
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(label, fontSize = 14.sp, color = DcColors.OnSurface)
-            if (hint != null) {
-                Text(hint, fontSize = 11.sp, color = DcColors.OnSurfaceFaint)
-            }
-        }
+        Text(label, fontSize = 14.sp, color = DcColors.OnSurface, modifier = Modifier.weight(1f))
         Box(
             modifier = Modifier
-                .width(120.dp)
+                .width(100.dp)
                 .background(DcColors.SurfaceTint, RoundedCornerShape(6.dp))
-                .border(
-                    1.dp,
-                    if (overridden) DcColors.Primary else DcColors.Outline,
-                    RoundedCornerShape(6.dp),
-                )
+                .border(1.dp, DcColors.Primary, RoundedCornerShape(6.dp))
                 .padding(horizontal = 12.dp, vertical = 9.dp),
         ) {
             BasicTextField(
@@ -321,6 +327,40 @@ private fun ParamRow(
                     inner()
                 },
             )
+        }
+        IconButton(onClick = onRemove, modifier = Modifier.size(34.dp)) {
+            Icon(Icons.Filled.Close, contentDescription = "Remove $label", tint = DcColors.OnSurfaceVariant, modifier = Modifier.size(18.dp))
+        }
+    }
+}
+
+@Composable
+private fun AddOverrideButton(
+    available: List<SamplingParam>,
+    onAdd: (SamplingParam) -> Unit,
+) {
+    if (available.isEmpty()) return
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            modifier = Modifier
+                .padding(top = 10.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .clickable { open = true }
+                .padding(vertical = 6.dp, horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Filled.Add, contentDescription = null, tint = DcColors.Primary, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Add override", color = DcColors.Primary, fontWeight = FontWeight.Medium, fontSize = 13.sp)
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            available.forEach { param ->
+                DropdownMenuItem(
+                    text = { Text(param.label, fontSize = 14.sp) },
+                    onClick = { onAdd(param); open = false },
+                )
+            }
         }
     }
 }
