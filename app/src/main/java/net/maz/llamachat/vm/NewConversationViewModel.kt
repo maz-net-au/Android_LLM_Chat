@@ -16,6 +16,9 @@ import net.maz.llamachat.data.SettingsRepository
 import net.maz.llamachat.data.model.Catalog
 import net.maz.llamachat.data.model.ChatMessage
 import net.maz.llamachat.data.model.Conversation
+import net.maz.llamachat.data.model.SamplingParam
+import net.maz.llamachat.data.model.samplingOverridesFrom
+import net.maz.llamachat.data.model.samplingTextFrom
 
 enum class NewMenu { NONE, CHARACTER, PRESET }
 
@@ -27,6 +30,8 @@ data class NewConvUiState(
     val model: String = "",
     /** Substituted for `{{user}}`; defaults to the last-used name. */
     val userName: String = "user",
+    /** Raw text per overridden sampling param; absent/blank = inherit from [preset]. */
+    val samplingText: Map<SamplingParam, String> = emptyMap(),
     val openMenu: NewMenu = NewMenu.NONE,
     /** Set to the conversation id once started/saved, for the screen to navigate. */
     val startedId: Long? = null,
@@ -55,6 +60,7 @@ class NewConversationViewModel(
                             preset = c.presetName,
                             model = c.model.ifEmpty { current.currentModel },
                             userName = c.userName,
+                            samplingText = samplingTextFrom(c.sampling),
                         )
                     }
                 }
@@ -73,8 +79,19 @@ class NewConversationViewModel(
     fun setTitle(v: String) = _state.update { it.copy(title = v) }
     fun setUserName(v: String) = _state.update { it.copy(userName = v) }
     fun selectCharacter(name: String) = _state.update { it.copy(character = name, openMenu = NewMenu.NONE) }
-    fun selectPreset(name: String) = _state.update { it.copy(preset = name, openMenu = NewMenu.NONE) }
+    // Switching the preset template starts from a clean slate (the new preset's values).
+    fun selectPreset(name: String) = _state.update { it.copy(preset = name, samplingText = emptyMap(), openMenu = NewMenu.NONE) }
     fun selectModel(model: String) = _state.update { it.copy(model = model) }
+
+    /** Set (or, when [value] is blank, clear) a per-conversation sampling override. */
+    fun setSamplingParam(param: SamplingParam, value: String) = _state.update {
+        val next = it.samplingText.toMutableMap()
+        if (value.isBlank()) next.remove(param) else next[param] = value
+        it.copy(samplingText = next)
+    }
+
+    /** Drop all overrides, falling back to the selected preset's values. */
+    fun resetSampling() = _state.update { it.copy(samplingText = emptyMap()) }
     fun toggleMenu(menu: NewMenu) = _state.update {
         it.copy(openMenu = if (it.openMenu == menu) NewMenu.NONE else menu)
     }
@@ -83,6 +100,7 @@ class NewConversationViewModel(
         val st = _state.value
         val title = st.title.trim()
         val userName = st.userName.trim().ifEmpty { "user" }
+        val sampling = samplingOverridesFrom(st.samplingText)
         viewModelScope.launch {
             // Remember this name, model and preset as the defaults for future conversations.
             settings.setUserName(userName)
@@ -96,6 +114,7 @@ class NewConversationViewModel(
                             presetName = st.preset,
                             model = st.model,
                             userName = userName,
+                            sampling = sampling,
                             title = title.ifEmpty { existing.title },
                             updatedAt = System.currentTimeMillis(),
                         ),
@@ -124,6 +143,7 @@ class NewConversationViewModel(
                         createdAt = now,
                         updatedAt = now,
                         userName = userName,
+                        sampling = sampling,
                         messages = seed,
                     ),
                 )

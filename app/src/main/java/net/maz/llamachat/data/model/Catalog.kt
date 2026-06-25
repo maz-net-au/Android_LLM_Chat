@@ -1,6 +1,7 @@
 package net.maz.llamachat.data.model
 
 import androidx.compose.ui.graphics.Color
+import kotlinx.serialization.Serializable
 import net.maz.llamachat.ui.theme.DcColors
 import kotlin.math.absoluteValue
 
@@ -80,9 +81,95 @@ data class Preset(
         mirostatEta?.let { add("miro_eta" to trim(it)) }
     }
 
-    private fun trim(d: Double): String =
-        if (d == d.toLong().toDouble()) d.toLong().toString() else d.toString()
+    private fun trim(d: Double): String = formatSampling(d)
 }
+
+/**
+ * Per-conversation sampling overrides. Each field mirrors a [Preset] field; a null
+ * means "inherit from the conversation's named preset". Persisted as a JSON blob on
+ * the conversation so a chat can be tuned without affecting any other chat or the
+ * shared preset library.
+ */
+@Serializable
+data class SamplingOverrides(
+    val temperature: Double? = null,
+    val topP: Double? = null,
+    val topK: Int? = null,
+    val minP: Double? = null,
+    val typicalP: Double? = null,
+    val repeatPenalty: Double? = null,
+    val repeatLastN: Int? = null,
+    val presencePenalty: Double? = null,
+    val frequencyPenalty: Double? = null,
+    val mirostat: Int? = null,
+    val mirostatTau: Double? = null,
+    val mirostatEta: Double? = null,
+) {
+    val isEmpty: Boolean get() = this == SamplingOverrides()
+}
+
+/**
+ * The tunable sampling fields, paired with how to read each one from a [Preset]
+ * (the inherited default) and a [SamplingOverrides] (the per-chat value). Drives
+ * the override editor and (de)serialization without 12-way boilerplate at each site.
+ */
+enum class SamplingParam(
+    val label: String,
+    /** True for integer-valued params (top_k, mirostat, …); the rest are decimals. */
+    val isInt: Boolean,
+    /** llama.cpp's built-in default (from `common_params_sampling`) — what the server
+     *  uses when the field is omitted. Surfaced in the editor so it can be typed in to
+     *  revert a parameter the preset sets. */
+    val default: Number,
+    val fromPreset: (Preset) -> Number?,
+    val fromOverrides: (SamplingOverrides) -> Number?,
+    /** Value that neutralises/disables the sampler, when it differs from [default]
+     *  (e.g. top_p 1.0 keeps everything; the penalties already disable at their
+     *  default). Surfaced alongside the default so the sampler can be switched off. */
+    val off: Number? = null,
+) {
+    TEMPERATURE("Temperature", false, 0.8, { it.temperature }, { it.temperature }, off = 1.0),
+    TOP_P("Top P", false, 0.95, { it.topP }, { it.topP }, off = 1.0),
+    TOP_K("Top K", true, 40, { it.topK }, { it.topK }, off = 0),
+    MIN_P("Min P", false, 0.05, { it.minP }, { it.minP }, off = 0.0),
+    TYPICAL_P("Typical P", false, 1.0, { it.typicalP }, { it.typicalP }),
+    REPEAT_PENALTY("Repeat penalty", false, 1.0, { it.repeatPenalty }, { it.repeatPenalty }),
+    REPEAT_LAST_N("Repeat last N", true, 64, { it.repeatLastN }, { it.repeatLastN }, off = 0),
+    PRESENCE_PENALTY("Presence penalty", false, 0.0, { it.presencePenalty }, { it.presencePenalty }),
+    FREQUENCY_PENALTY("Frequency penalty", false, 0.0, { it.frequencyPenalty }, { it.frequencyPenalty }),
+    MIROSTAT("Mirostat (0/1/2)", true, 0, { it.mirostat }, { it.mirostat }),
+    MIROSTAT_TAU("Mirostat tau", false, 5.0, { it.mirostatTau }, { it.mirostatTau }),
+    MIROSTAT_ETA("Mirostat eta", false, 0.1, { it.mirostatEta }, { it.mirostatEta });
+}
+
+/** Compact numeric formatting shared by preset chips and the override editor:
+ *  whole-valued doubles print without a trailing ".0". */
+fun formatSampling(n: Number): String =
+    if (n is Double && n == n.toLong().toDouble()) n.toLong().toString() else n.toString()
+
+/** Build [SamplingOverrides] from raw editor text, dropping blank/unparseable entries. */
+fun samplingOverridesFrom(text: Map<SamplingParam, String>): SamplingOverrides {
+    fun d(p: SamplingParam) = text[p]?.trim()?.toDoubleOrNull()
+    fun i(p: SamplingParam) = text[p]?.trim()?.toIntOrNull()
+    return SamplingOverrides(
+        temperature = d(SamplingParam.TEMPERATURE),
+        topP = d(SamplingParam.TOP_P),
+        topK = i(SamplingParam.TOP_K),
+        minP = d(SamplingParam.MIN_P),
+        typicalP = d(SamplingParam.TYPICAL_P),
+        repeatPenalty = d(SamplingParam.REPEAT_PENALTY),
+        repeatLastN = i(SamplingParam.REPEAT_LAST_N),
+        presencePenalty = d(SamplingParam.PRESENCE_PENALTY),
+        frequencyPenalty = d(SamplingParam.FREQUENCY_PENALTY),
+        mirostat = i(SamplingParam.MIROSTAT),
+        mirostatTau = d(SamplingParam.MIROSTAT_TAU),
+        mirostatEta = d(SamplingParam.MIROSTAT_ETA),
+    )
+}
+
+/** Raw editor text for the fields [o] actually sets (so the editor pre-fills them). */
+fun samplingTextFrom(o: SamplingOverrides): Map<SamplingParam, String> =
+    SamplingParam.entries.mapNotNull { p -> p.fromOverrides(o)?.let { p to formatSampling(it) } }.toMap()
 
 object Catalog {
     /** Default characters seeded on first run; also the fallback when a referenced

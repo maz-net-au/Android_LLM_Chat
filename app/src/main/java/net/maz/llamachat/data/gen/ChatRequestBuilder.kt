@@ -80,7 +80,7 @@ object ChatRequestBuilder {
         maxTokens: Int?,
         ignoreEos: Boolean?,
     ): ChatRequest {
-        val preset = conv.preset
+        val preset = conv.effectivePreset
         return ChatRequest(
             model = conv.model.ifEmpty { s.currentModel },
             messages = messages,

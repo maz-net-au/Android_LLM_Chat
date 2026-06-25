@@ -45,10 +45,31 @@ data class Conversation(
     val updatedAt: Long,
     /** Name substituted for `{{user}}` in this conversation's prompts/greeting. */
     val userName: String = "user",
+    /** Per-chat sampling tweaks layered over [presetName]; empty = pure preset. */
+    val sampling: SamplingOverrides = SamplingOverrides(),
     val messages: List<ChatMessage> = emptyList(),
 ) {
     val character get() = Catalog.character(characterName)
     val preset get() = Catalog.preset(presetName)
+
+    /** The [presetName] template with this conversation's [sampling] overrides
+     *  applied — what actually gets sent to llama-server. */
+    val effectivePreset: Preset get() = preset.let { p ->
+        p.copy(
+            temperature = sampling.temperature ?: p.temperature,
+            topP = sampling.topP ?: p.topP,
+            topK = sampling.topK ?: p.topK,
+            minP = sampling.minP ?: p.minP,
+            typicalP = sampling.typicalP ?: p.typicalP,
+            repeatPenalty = sampling.repeatPenalty ?: p.repeatPenalty,
+            repeatLastN = sampling.repeatLastN ?: p.repeatLastN,
+            presencePenalty = sampling.presencePenalty ?: p.presencePenalty,
+            frequencyPenalty = sampling.frequencyPenalty ?: p.frequencyPenalty,
+            mirostat = sampling.mirostat ?: p.mirostat,
+            mirostatTau = sampling.mirostatTau ?: p.mirostatTau,
+            mirostatEta = sampling.mirostatEta ?: p.mirostatEta,
+        )
+    }
 
     /** One-line preview for the conversation list, matching the prototype. */
     fun preview(): String {

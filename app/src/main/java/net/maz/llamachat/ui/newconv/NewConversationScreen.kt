@@ -5,8 +5,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,6 +15,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -29,6 +29,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -38,12 +39,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import net.maz.llamachat.data.model.Catalog
+import net.maz.llamachat.data.model.SamplingParam
+import net.maz.llamachat.data.model.formatSampling
 import net.maz.llamachat.ui.components.Avatar
 import net.maz.llamachat.ui.components.DcTextField
 import net.maz.llamachat.ui.theme.DcColors
@@ -108,7 +113,7 @@ fun NewConversationScreen(
 
             Spacer(Modifier.height(22.dp))
             SectionLabel("PARAMETER PRESET")
-            PresetSelector(vm, selectedName = state.preset)
+            PresetSelector(vm, selectedName = state.preset, samplingText = state.samplingText)
 
             Spacer(Modifier.height(22.dp))
             SectionLabel("MODEL")
@@ -188,9 +193,12 @@ private fun CharacterSelector(vm: NewConversationViewModel, selectedName: String
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PresetSelector(vm: NewConversationViewModel, selectedName: String) {
+private fun PresetSelector(
+    vm: NewConversationViewModel,
+    selectedName: String,
+    samplingText: Map<SamplingParam, String>,
+) {
     var open by remember { mutableStateOf(false) }
     val selected = Catalog.preset(selectedName)
     Box {
@@ -217,21 +225,102 @@ private fun PresetSelector(vm: NewConversationViewModel, selectedName: String) {
             }
         }
     }
-    // Parameter chips
-    FlowRow(
-        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+
+    // Editable parameters: each field overrides the preset for this chat only.
+    // Blank fields inherit the preset value (shown as the placeholder).
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        selected.chips().forEach { (k, v) ->
-            Row(
-                modifier = Modifier
-                    .padding(end = 8.dp, bottom = 8.dp)
-                    .background(DcColors.PrimaryContainer, RoundedCornerShape(14.dp))
-                    .padding(horizontal = 12.dp, vertical = 5.dp),
-            ) {
-                Text(k, fontSize = 12.sp, color = DcColors.PrimaryDark.copy(alpha = 0.7f))
-                Spacer(Modifier.width(4.dp))
-                Text(v, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DcColors.PrimaryDark)
+        Text(
+            "Overrides for this chat",
+            fontSize = 12.sp,
+            color = DcColors.OnSurfaceMedium,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(1f),
+        )
+        if (samplingText.isNotEmpty()) {
+            Text(
+                "RESET",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.6.sp,
+                color = DcColors.Primary,
+                modifier = Modifier.clickable { vm.resetSampling() }.padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+        }
+    }
+    SamplingParam.entries.forEach { param ->
+        val presetValue = param.fromPreset(selected)?.let { formatSampling(it) }
+        val defaultValue = formatSampling(param.default)
+        val offValue = param.off?.let { formatSampling(it) }
+        // Blank inherits the preset's value, or the model default when the preset
+        // leaves it unset. The caption surfaces the values you'd type to revert
+        // (default) or switch the sampler off — omitting whichever already shows.
+        val placeholder = presetValue ?: defaultValue
+        val hint = buildList {
+            if (presetValue != null && presetValue != defaultValue) add("default $defaultValue")
+            if (offValue != null && offValue != placeholder) add("off $offValue")
+        }.joinToString(" · ").ifBlank { null }
+        ParamRow(
+            label = param.label,
+            value = samplingText[param].orEmpty(),
+            placeholder = placeholder,
+            hint = hint,
+            isInt = param.isInt,
+            onValueChange = { vm.setSamplingParam(param, it) },
+        )
+    }
+}
+
+@Composable
+private fun ParamRow(
+    label: String,
+    value: String,
+    placeholder: String,
+    hint: String?,
+    isInt: Boolean,
+    onValueChange: (String) -> Unit,
+) {
+    val overridden = value.isNotBlank()
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(label, fontSize = 14.sp, color = DcColors.OnSurface)
+            if (hint != null) {
+                Text(hint, fontSize = 11.sp, color = DcColors.OnSurfaceFaint)
             }
+        }
+        Box(
+            modifier = Modifier
+                .width(120.dp)
+                .background(DcColors.SurfaceTint, RoundedCornerShape(6.dp))
+                .border(
+                    1.dp,
+                    if (overridden) DcColors.Primary else DcColors.Outline,
+                    RoundedCornerShape(6.dp),
+                )
+                .padding(horizontal = 12.dp, vertical = 9.dp),
+        ) {
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = true,
+                textStyle = LocalTextStyle.current.copy(fontSize = 15.sp, color = DcColors.OnSurface),
+                cursorBrush = SolidColor(DcColors.Primary),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = if (isInt) KeyboardType.Number else KeyboardType.Decimal,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+                decorationBox = { inner ->
+                    if (value.isEmpty()) {
+                        Text(placeholder, color = DcColors.OnSurfaceFaint, fontSize = 15.sp)
+                    }
+                    inner()
+                },
+            )
         }
     }
 }

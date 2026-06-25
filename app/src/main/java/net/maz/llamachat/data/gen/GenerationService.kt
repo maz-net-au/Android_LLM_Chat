@@ -120,37 +120,84 @@ class GenerationService : Service() {
             forceContinue -> conv.messages[idx].text.trimEnd()
             else -> conv.messages[idx].text
         }
+        // The transcript "Name:" prefill isn't real content; strip it to tell a
+        // genuinely empty reply (model emitted nothing) from a real one.
+        val prefix = if (conv.character.usesNamePrefixes) "${conv.characterName}: " else ""
         val request = ChatRequestBuilder.reply(conv, idx, includePartial, forceContinue, s)
 
         val token = controller.begin(convId, targetId, base)
-        val sb = StringBuilder(base)
-        var lastWrite = SystemClock.elapsedRealtime()
         try {
-            client.streamChat(s.ip, s.port, request).collect { delta ->
-                sb.append(delta)
-                controller.update(token, sb.toString())
-                val now = SystemClock.elapsedRealtime()
-                if (now - lastWrite >= WRITE_INTERVAL_MS) {
-                    persist(repo, convId, targetId, sb.toString())
-                    lastWrite = now
+            // Some servers occasionally return a stream that completes with no
+            // content. Rather than store an empty turn, re-request a few times, then
+            // discard it. "Continue" is exempt: it already has content to keep, and
+            // discarding would drop the user's existing message.
+            var attempt = 0
+            while (true) {
+                val sb = StringBuilder(base)
+                controller.update(token, base) // reset the live overlay for this attempt
+                var lastWrite = SystemClock.elapsedRealtime()
+                try {
+                    client.streamChat(s.ip, s.port, request).collect { delta ->
+                        sb.append(delta)
+                        controller.update(token, sb.toString())
+                        val now = SystemClock.elapsedRealtime()
+                        if (now - lastWrite >= WRITE_INTERVAL_MS) {
+                            persist(repo, convId, targetId, sb.toString())
+                            lastWrite = now
+                        }
+                    }
+                } catch (c: CancellationException) {
+                    // Stop / Cancel: keep whatever was generated so far. The coroutine
+                    // is already cancelled, so the save must run uninterruptibly.
+                    withContext(NonCancellable) { persist(repo, convId, targetId, sb.toString()) }
+                    throw c
+                } catch (e: Exception) {
+                    val text = if (sb.length <= base.length) {
+                        "⚠️ Couldn't generate a reply: ${e.message ?: "unknown error"}"
+                    } else {
+                        sb.toString() // a dropped connection still keeps the partial
+                    }
+                    persist(repo, convId, targetId, text)
+                    return
+                }
+
+                val emptyReply = !forceContinue && sb.toString().removePrefix(prefix).isBlank()
+                when {
+                    !emptyReply -> {
+                        persist(repo, convId, targetId, sb.toString())
+                        return
+                    }
+                    attempt < MAX_EMPTY_RETRIES -> attempt++ // re-request and try again
+                    else -> {
+                        discardEmpty(repo, convId, targetId)
+                        return
+                    }
                 }
             }
-            persist(repo, convId, targetId, sb.toString())
-        } catch (c: CancellationException) {
-            // Stop / Cancel: keep whatever was generated so far. The coroutine is
-            // already cancelled, so the save must run uninterruptibly.
-            withContext(NonCancellable) { persist(repo, convId, targetId, sb.toString()) }
-            throw c
-        } catch (e: Exception) {
-            val text = if (sb.length <= base.length) {
-                "⚠️ Couldn't generate a reply: ${e.message ?: "unknown error"}"
-            } else {
-                sb.toString() // a dropped connection still keeps the partial
-            }
-            persist(repo, convId, targetId, text)
         } finally {
             controller.end(token)
         }
+    }
+
+    /** An empty reply survived every retry: drop it instead of storing a blank turn.
+     *  A regenerated variant falls back to the previously shown one; a fresh reply
+     *  (its only variant) removes the assistant message outright. */
+    private suspend fun discardEmpty(repo: ConversationRepository, convId: Long, targetId: Long) {
+        val conv = repo.get(convId) ?: return
+        val msg = conv.messages.firstOrNull { it.id == targetId } ?: return
+        val messages = if (msg.variants.size > 1) {
+            val variants = msg.variants.toMutableList()
+            val removeAt = msg.activeVariant.coerceIn(0, variants.size - 1)
+            variants.removeAt(removeAt)
+            conv.messages.map {
+                if (it.id == targetId)
+                    it.copy(variants = variants, activeVariant = (removeAt - 1).coerceIn(0, variants.size - 1))
+                else it
+            }
+        } else {
+            conv.messages.filter { it.id != targetId }
+        }
+        repo.save(conv.copy(updatedAt = System.currentTimeMillis(), messages = messages))
     }
 
     /** Read-modify-write the target message's text back into Room. Re-reads each
@@ -236,6 +283,8 @@ class GenerationService : Service() {
         private const val CHANNEL_ID = "generation"
         private const val NOTIF_ID = 1001
         private const val WRITE_INTERVAL_MS = 150L
+        /** Re-request this many times when a stream completes with no content. */
+        private const val MAX_EMPTY_RETRIES = 2
 
         private const val ACTION_START = "net.maz.llamachat.action.START_GENERATION"
         private const val ACTION_CANCEL = "net.maz.llamachat.action.CANCEL_GENERATION"

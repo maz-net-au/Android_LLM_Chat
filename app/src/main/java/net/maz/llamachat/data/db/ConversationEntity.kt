@@ -6,6 +6,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import net.maz.llamachat.data.model.ChatMessage
 import net.maz.llamachat.data.model.Conversation
+import net.maz.llamachat.data.model.SamplingOverrides
 
 private val json = Json { ignoreUnknownKeys = true }
 
@@ -23,6 +24,7 @@ data class ConversationEntity(
     val createdAt: Long,
     val updatedAt: Long,
     val userName: String = "user",
+    val samplingJson: String = "{}",
     val messagesJson: String,
 ) {
     fun toDomain(): Conversation = Conversation(
@@ -34,6 +36,9 @@ data class ConversationEntity(
         createdAt = createdAt,
         updatedAt = updatedAt,
         userName = userName,
+        sampling = runCatching {
+            json.decodeFromString<SamplingOverrides>(samplingJson)
+        }.getOrDefault(SamplingOverrides()),
         messages = runCatching {
             json.decodeFromString<List<ChatMessage>>(messagesJson)
         }.getOrDefault(emptyList()),
@@ -49,6 +54,7 @@ data class ConversationEntity(
             createdAt = c.createdAt,
             updatedAt = c.updatedAt,
             userName = c.userName,
+            samplingJson = json.encodeToString(c.sampling),
             messagesJson = json.encodeToString(c.messages),
         )
     }
