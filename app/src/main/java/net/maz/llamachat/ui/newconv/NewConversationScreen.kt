@@ -115,12 +115,12 @@ fun NewConversationScreen(
             CharacterSelector(vm, selectedName = state.character)
 
             Spacer(Modifier.height(22.dp))
-            SectionLabel("PARAMETER PRESET")
-            PresetSelector(vm, selectedName = state.preset, samplingText = state.samplingText)
-
-            Spacer(Modifier.height(22.dp))
             SectionLabel("MODEL")
             ModelSelector(vm, selectedModel = state.model)
+
+            Spacer(Modifier.height(22.dp))
+            SectionLabel("PARAMETER PRESET")
+            PresetSelector(vm, selectedName = state.preset, samplingText = state.samplingText)
         }
 
         // Bottom action bar
