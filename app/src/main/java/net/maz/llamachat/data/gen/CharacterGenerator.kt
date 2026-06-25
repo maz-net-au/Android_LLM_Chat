@@ -80,7 +80,7 @@ object CharacterGenerator {
         val sparks = SPARKS.shuffled().take(3).joinToString(", ")
         fun orAny(v: String) = v.trim().ifBlank { "any — you choose" }
         return buildString {
-            appendLine("Invent ONE original fictional character for a roleplay chat.")
+            appendLine("Invent ONE believable, everyday person for a casual, slice-of-life chat.")
             appendLine()
             appendLine("Honor any constraint that is filled in; freely invent the rest:")
             appendLine("- Gender: ${orAny(seed.gender)}")
@@ -88,9 +88,10 @@ object CharacterGenerator {
             appendLine("- Profession or hobby: ${orAny(seed.profession)}")
             appendLine("- Extra notes / vibe: ${seed.vibe.trim().ifBlank { "none" }}")
             appendLine()
-            appendLine("Make them genuinely novel: avoid stock archetypes and the most")
-            appendLine("predictable names, and give them one specific, surprising contradiction.")
-            appendLine("Let these words quietly inspire the details, without naming them: $sparks.")
+            appendLine("Keep them grounded and realistic — an ordinary person you might actually")
+            appendLine("meet, not a larger-than-life or fantastical figure. Give them a common,")
+            appendLine("natural-sounding name and a couple of specific, relatable everyday details.")
+            appendLine("Let these things quietly inspire those details, without naming them: $sparks.")
             appendLine()
             appendLine("Reply with ONLY this YAML — no commentary, no code fences:")
             appendLine("name: <a fitting, non-generic name>")
@@ -110,25 +111,33 @@ object CharacterGenerator {
     }
 
     private const val SYSTEM =
-        "You are an imaginative character designer who invents vivid, original " +
-            "personas for a roleplay chat app. You always answer with a single YAML " +
-            "document and nothing else."
+        "You design believable, down-to-earth people for a casual, slice-of-life " +
+            "chat app — ordinary characters with realistic lives and relatable quirks. " +
+            "You always answer with a single YAML document and nothing else."
 
     private val GENDERS = listOf("female", "male", "non-binary", "ambiguous", "any")
 
     private val AGES = listOf(
-        "teenager", "early 20s", "late 20s", "early 30s", "40s",
-        "50s", "60s", "elderly", "ageless", "centuries old",
+        "toddler", "child", "school aged", "preteen", "tween", "early teens",
+	"late teens", "early 20s", "mid 20s", "late 20s", "early 30s",
+        "mid 30s", "early 40s", "late 40s",
     )
 
     private val PROFESSIONS = listOf(
-        "lighthouse keeper", "marine biologist", "street magician", "war correspondent",
-        "perfumer", "glacier guide", "forensic accountant", "puppet maker",
-        "deep-sea welder", "cartographer of imaginary places", "night-shift radio host",
-        "beekeeper", "video game composer", "cave diver", "obituary writer",
-        "competitive sheepdog trainer", "antique clock restorer", "storm chaser",
-        "submarine cook", "museum night guard", "retired stunt double", "tea sommelier",
-        "volcanologist", "ghostwriter", "carnival fortune teller", "bridge inspector",
+        // Everyday jobs
+        "nurse", "schoolteacher", "barista", "accountant", "plumber", "graphic designer",
+        "bus driver", "librarian", "chef", "electrician", "software developer",
+        "retail manager", "florist", "mechanic", "real estate agent", "physical therapist",
+        "bartender", "social worker", "carpenter", "hairdresser", "pharmacist",
+        "paramedic", "veterinary tech", "baker", "postal worker", "dental hygienist",
+        "office administrator", "warehouse worker", "barber", "midwife", "optometrist",
+        "primary school teacher", "freelance illustrator", "call-centre agent", "farmer",
+        "personal trainer", "house painter", "bookkeeper", "delivery driver", "waiter",
+        // Everyday hobbies and pursuits
+        "amateur baker", "weekend hiker", "allotment gardener", "marathon runner",
+        "choir member", "amateur photographer", "home cook", "knitting-circle regular",
+        "guitarist in a covers band", "board-game collector", "birdwatcher",
+        "book-club regular", "amateur potter", "fishing enthusiast", "cyclist",
     )
 
     private val VIBES = listOf(
@@ -139,30 +148,33 @@ object CharacterGenerator {
     )
 
     private val SPARKS = listOf(
-        // Materials & textures
-        "salt", "brass", "velvet", "rust", "copper", "quartz", "cedar", "ash",
-        "marrow", "gravel", "pearl", "wire", "silk", "iron", "amber", "obsidian",
-        "chalk", "resin", "linen", "slate", "porcelain", "tin", "wax", "flint",
-        "moss", "lacquer", "sandstone", "graphite", "bone", "clay",
-        // Weather & sky
-        "thunder", "frost", "rain", "tide", "drift", "fathom", "mist", "monsoon",
-        "aurora", "eclipse", "squall", "drizzle", "haze", "gale", "dusk", "dawn",
-        "solstice", "comet", "thaw", "blizzard",
-        // Light, fire & sound
-        "ember", "static", "neon", "echo", "smoke", "lantern", "spark", "flare",
-        "glow", "shimmer", "hum", "chime", "tremor", "whisper", "siren", "crackle",
-        "candle", "beacon", "flicker", "resonance",
-        // Objects & instruments
-        "compass", "ledger", "spindle", "hollow", "anchor", "lockpick", "telescope",
-        "metronome", "sextant", "typewriter", "gramophone", "kaleidoscope", "abacus",
-        "harpoon", "loom", "bellows", "scalpel", "trowel", "astrolabe", "quill",
-        // Nature & creatures
-        "moth", "honey", "raven", "fox", "kelp", "ivy", "lichen", "cicada", "heron",
-        "wolf", "nettle", "thistle", "barnacle", "firefly", "jackdaw", "wisteria",
-        "starling", "urchin", "fern", "hawthorn",
-        // Abstract & temperament
-        "vows", "exile", "debt", "rumor", "mercy", "grudge", "omen", "ritual",
-        "lullaby", "cipher", "pilgrimage", "wager", "feud", "confession", "alibi",
-        "inheritance", "superstition", "nostalgia", "vendetta", "epiphany",
+        // Home & domestic life
+        "kettle", "houseplants", "leftovers", "laundry", "spare key", "junk drawer",
+        "fridge magnets", "doormat", "slippers", "to-do list", "spare room",
+        "garden shed", "back porch", "kitchen radio", "good mugs", "hand-me-downs",
+        "photo album", "thermostat", "recipe card", "spare change",
+        // Food & drink
+        "coffee", "toast", "leftover curry", "homemade jam", "corner café",
+        "packed lunch", "Sunday roast", "biscuit tin", "takeaway", "herbal tea",
+        "birthday cake", "lukewarm tea", "midnight snack", "burnt dinner",
+        // Routines & places
+        "commute", "school run", "lunch break", "night shift", "queue", "bus stop",
+        "supermarket", "waiting room", "parking", "local pub", "gym membership",
+        "morning alarm", "weekend lie-in", "office kitchen", "neighbourhood",
+        // Weather & seasons (everyday)
+        "drizzle", "heatwave", "first frost", "muddy boots", "umbrella", "sunburn",
+        "autumn leaves", "long evenings", "grey morning", "snow day",
+        // Hobbies & small pleasures
+        "crossword", "knitting", "playlist", "paperback", "podcast", "houseplant",
+        "five-a-side", "allotment", "jigsaw", "dog walk", "karaoke", "Sunday market",
+        "old records", "weekend project", "group chat",
+        // Relationships & feelings
+        "old friends", "in-jokes", "first crush", "homesickness", "fresh start",
+        "second chances", "stage fright", "nostalgia", "small talk", "white lie",
+        "long-distance", "reunion", "awkward silence", "quiet pride", "guilty pleasure",
+        // Objects & odds and ends
+        "bicycle", "phone charger", "loose button", "shoebox of letters", "ticket stub",
+        "worn-out trainers", "house plant", "spare tyre", "battered notebook",
+        "headphones", "lucky pen", "fridge poetry", "stack of mail", "broken watch",
     )
 }

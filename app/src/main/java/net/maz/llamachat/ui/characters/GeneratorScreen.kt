@@ -108,12 +108,13 @@ private fun InputView(vm: GeneratorViewModel, state: net.maz.llamachat.vm.Genera
             OutlinedButton(
                 onClick = vm::surpriseMe,
                 shape = RoundedCornerShape(4.dp),
-                modifier = Modifier.fillMaxWidth().height(44.dp).padding(bottom = 18.dp),
+                modifier = Modifier.fillMaxWidth().height(46.dp),
             ) {
                 Icon(Icons.Filled.Casino, contentDescription = null, tint = DcColors.Primary, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Surprise me", color = DcColors.Primary, fontWeight = FontWeight.Medium, fontSize = 14.sp)
             }
+            Spacer(Modifier.height(18.dp))
 
             val seed = state.seed
             DcTextField(
