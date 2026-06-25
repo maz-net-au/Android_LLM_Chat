@@ -17,11 +17,8 @@ data class ChatRequest(
     val stream: Boolean = true,
     /** Sequences that halt generation, e.g. the next speaker's "Name:" prefix. */
     val stop: List<String>? = null,
-    /** Token cap; set on "Continue" alongside [ignoreEos] to bound forced output. */
+    /** Token cap; bounds a "Continue" / "Impersonate" so it can't run away. */
     @SerialName("max_tokens") val maxTokens: Int? = null,
-    /** When true the model can't end its turn on EOS — used so "Continue" keeps
-     *  writing instead of immediately emitting an end-of-turn token. */
-    @SerialName("ignore_eos") val ignoreEos: Boolean? = null,
     val temperature: Double? = null,
     @SerialName("top_p") val topP: Double? = null,
     @SerialName("top_k") val topK: Int? = null,

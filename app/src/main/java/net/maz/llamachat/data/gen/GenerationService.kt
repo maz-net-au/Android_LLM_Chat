@@ -113,13 +113,9 @@ class GenerationService : Service() {
         if (idx < 0) return
         val s = settings.current()
 
-        // On "Continue", trim trailing whitespace so an already-complete-looking
-        // partial doesn't read as a finished turn (mirrors the old ChatViewModel).
-        val base = when {
-            !includePartial -> ""
-            forceContinue -> conv.messages[idx].text.trimEnd()
-            else -> conv.messages[idx].text
-        }
+        // Continue (and the transcript-mode prefill) extend the existing text as-is:
+        // keep any trailing whitespace so appended tokens don't fuse onto the last word.
+        val base = if (includePartial) conv.messages[idx].text else ""
         // The transcript "Name:" prefill isn't real content; strip it to tell a
         // genuinely empty reply (model emitted nothing) from a real one.
         val prefix = if (conv.character.usesNamePrefixes) "${conv.characterName}: " else ""

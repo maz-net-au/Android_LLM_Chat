@@ -29,16 +29,17 @@ object ChatRequestBuilder {
             if (i < assistantIndex) out += apiMessage(m.role, m.text)
         }
         if (includePartial) {
-            val raw = conv.messages.getOrNull(assistantIndex)?.text.orEmpty()
-            val partial = if (forceContinue) raw.trimEnd() else raw
+            // Sent verbatim, including any trailing space, so the model continues from
+            // exactly where the text left off rather than fusing onto the last word.
+            val partial = conv.messages.getOrNull(assistantIndex)?.text.orEmpty()
             if (partial.isNotBlank()) out += ApiMessage("assistant", partial)
         }
         return request(
             conv = conv,
             messages = out,
             s = s,
+            // Bound a continue so it can't run away; EOS is respected so it stops naturally.
             maxTokens = if (forceContinue) 1000 else null,
-            ignoreEos = if (forceContinue) true else null,
         )
     }
 
@@ -63,7 +64,7 @@ object ChatRequestBuilder {
                 out += apiMessage(m.role, m.text)
             }
         }
-        return request(conv, out, s, maxTokens = 1000, ignoreEos = true)
+        return request(conv, out, s, maxTokens = 1000)
     }
 
     private fun systemMessage(conv: Conversation): ApiMessage? =
@@ -78,7 +79,6 @@ object ChatRequestBuilder {
         messages: List<ApiMessage>,
         s: SettingsRepository.Settings,
         maxTokens: Int?,
-        ignoreEos: Boolean?,
     ): ChatRequest {
         val preset = conv.effectivePreset
         return ChatRequest(
@@ -88,7 +88,6 @@ object ChatRequestBuilder {
             stop = if (conv.character.usesNamePrefixes)
                 listOf("${conv.userName}:", "${conv.characterName}:") else null,
             maxTokens = maxTokens,
-            ignoreEos = ignoreEos,
             temperature = preset.temperature,
             topP = preset.topP,
             topK = preset.topK,
