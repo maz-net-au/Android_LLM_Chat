@@ -15,6 +15,7 @@ import okhttp3.Response
 import okhttp3.sse.EventSource
 import okhttp3.sse.EventSourceListener
 import okhttp3.sse.EventSources
+import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
@@ -32,6 +33,16 @@ class LlamaClient {
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; explicitNulls = false }
     private val jsonMedia = "application/json".toMediaType()
+
+    // --- debug replay hook ---------------------------------------------------
+    // When set, every chat request is also written to "last-request.sh" in this
+    // dir as a runnable curl script, so a generation can be replayed and tweaked
+    // from a shell (see dumpForReplay). Set by LlamaChatApp; remove the field,
+    // dumpForReplay, prettyJson and its one call site to drop the feature.
+    var debugDumpDir: File? = null
+
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    private val prettyJson = Json { encodeDefaults = true; explicitNulls = false; prettyPrint = true }
 
     // Generation can pause between tokens, so the read timeout is disabled for
     // streaming. Connect/call timeouts still bound how long we wait to start.
@@ -72,8 +83,10 @@ class LlamaClient {
      * on transport or server errors.
      */
     fun streamChat(ip: String, port: String, body: ChatRequest): Flow<String> = callbackFlow {
+        val url = "${base(ip, port)}/v1/chat/completions"
+        dumpForReplay(url, body)
         val request = Request.Builder()
-            .url("${base(ip, port)}/v1/chat/completions")
+            .url(url)
             .post(json.encodeToString(body).toRequestBody(jsonMedia))
             .header("Accept", "text/event-stream")
             .build()
@@ -114,5 +127,29 @@ class LlamaClient {
 
         val eventSource = EventSources.createFactory(client).newEventSource(request, listener)
         awaitClose { eventSource.cancel() }
+    }
+
+    /**
+     * Debug-only: dump the request as a runnable curl script to [debugDumpDir]
+     * ("last-request.sh"), overwritten each call so it always holds the most
+     * recent generation. Pull it (`adb pull`), edit the pretty-printed JSON, and
+     * re-run to experiment — e.g. to chase an Impersonate that stops at the first
+     * token. Best-effort and silent: a dump failure never affects generation.
+     */
+    private fun dumpForReplay(url: String, body: ChatRequest) {
+        val dir = debugDumpDir ?: return
+        runCatching {
+            val script = buildString {
+                append("#!/bin/sh\n")
+                append("# Last LlamaChat request — edit the JSON below and re-run to experiment.\n")
+                append("curl -N ").append(url).append(" \\\n")
+                append("  -H 'Content-Type: application/json' \\\n")
+                append("  -H 'Accept: text/event-stream' \\\n")
+                append("  --data-binary @- <<'JSON'\n")
+                append(prettyJson.encodeToString(body))
+                append("\nJSON\n")
+            }
+            File(dir, "last-request.sh").writeText(script)
+        }
     }
 }

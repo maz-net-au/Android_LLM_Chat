@@ -48,6 +48,9 @@ class LlamaChatApp : Application() {
     override fun onCreate() {
         super.onCreate()
         characterRepository // touch to load the library at startup
+        // Debug replay hook: dump each chat request as a runnable curl script to
+        // the app's external files dir (adb pull .../files/last-request.sh).
+        llamaClient.debugDumpDir = getExternalFilesDir(null)
     }
 
     /**
