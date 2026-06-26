@@ -59,7 +59,11 @@ object ChatRequestBuilder {
         val last = conv.messages.lastIndex
         conv.messages.forEachIndexed { i, m ->
             if (i == last && m.role == Role.ASSISTANT && conv.character.usesNamePrefixes) {
-                out += ApiMessage("assistant", m.text.trimEnd() + "\n${conv.userName}: ")
+                // No trailing space after the "Name:" prefix: ending the prompt on a
+                // lone space token makes the model predict end-of-turn immediately
+                // (an instant EOS). Without it the next token starts a fresh word and
+                // generation proceeds; the VM trims the leading space off the stream.
+                out += ApiMessage("assistant", m.text.trimEnd() + "\n${conv.userName}:")
             } else {
                 out += apiMessage(m.role, m.text)
             }
