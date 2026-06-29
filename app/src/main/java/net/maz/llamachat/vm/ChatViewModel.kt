@@ -127,7 +127,9 @@ class ChatViewModel(
             title = title,
             updatedAt = System.currentTimeMillis(),
             messages = conv.messages +
-                ChatMessage.user(userId, if (prefixes) "${conv.userName}: $text" else text) +
+                // A blank input sends a truly empty user turn even in transcript mode,
+                // so the prefix isn't added to an otherwise-empty message.
+                ChatMessage.user(userId, if (prefixes && text.isNotEmpty()) "${conv.userName}: $text" else text) +
                 // In transcript mode, prefill the reply with "Character: " so the
                 // model is forced to speak as the character; generation continues it.
                 ChatMessage.assistant(assistantId, if (prefixes) "${conv.characterName}: " else ""),
