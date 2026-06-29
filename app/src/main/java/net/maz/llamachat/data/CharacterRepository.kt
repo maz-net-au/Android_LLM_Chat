@@ -62,7 +62,7 @@ class CharacterRepository(context: Context) {
         val finalName = uniqueName(name, without)
         val resolvedColor = color
             ?: get(originalName ?: name)?.color
-            ?: Catalog.colorFor(finalName)
+            ?: Catalog.defaultColor
         val updated = without + Character(
             name = finalName,
             context = context,
@@ -93,7 +93,7 @@ class CharacterRepository(context: Context) {
                 context = parsed.context,
                 greeting = parsed.greeting,
                 description = "",
-                color = Catalog.colorFor(finalName),
+                color = Catalog.defaultColor,
             )
             added++
         }

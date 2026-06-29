@@ -1,5 +1,6 @@
 package net.maz.llamachat.vm
 
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
@@ -26,9 +27,10 @@ class CharacterViewModel(
         greeting: String?,
         description: String,
         usesNamePrefixes: Boolean,
+        color: Color,
     ) {
         viewModelScope.launch {
-            repo.upsert(originalName, name.trim(), context, greeting, description.trim(), usesNamePrefixes)
+            repo.upsert(originalName, name.trim(), context, greeting, description.trim(), usesNamePrefixes, color)
         }
     }
 

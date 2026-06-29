@@ -1,8 +1,13 @@
 package net.maz.llamachat.ui.characters
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,10 +18,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -31,10 +38,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import net.maz.llamachat.data.model.Catalog
 import net.maz.llamachat.ui.components.DcTextField
 import net.maz.llamachat.ui.theme.DcColors
 import net.maz.llamachat.vm.CharacterViewModel
@@ -43,6 +53,7 @@ import net.maz.llamachat.vm.CharacterViewModel
  * Create ([editName] null) or edit a character. The `{{char}}` / `{{user}}`
  * placeholders are kept verbatim and substituted at send time.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CharacterEditScreen(
     vm: CharacterViewModel,
@@ -57,6 +68,7 @@ fun CharacterEditScreen(
     var greeting by remember { mutableStateOf(existing?.greeting ?: "") }
     var context by remember { mutableStateOf(existing?.context ?: "") }
     var usesNamePrefixes by remember { mutableStateOf(existing?.usesNamePrefixes ?: true) }
+    var color by remember { mutableStateOf(existing?.color ?: Catalog.palette.first()) }
 
     val canSave = name.isNotBlank()
 
@@ -120,6 +132,45 @@ fun CharacterEditScreen(
                 modifier = Modifier.padding(top = 8.dp),
             )
 
+            Text(
+                "COLOUR",
+                color = DcColors.Primary,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(top = 20.dp, bottom = 12.dp),
+            )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Catalog.palette.forEach { swatch ->
+                    val selected = swatch.toArgb() == color.toArgb()
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(swatch)
+                            .border(
+                                width = if (selected) 3.dp else 0.dp,
+                                color = if (selected) DcColors.OnSurface else Color.Transparent,
+                                shape = CircleShape,
+                            )
+                            .clickable { color = swatch },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (selected) {
+                            Icon(
+                                Icons.Filled.Check,
+                                contentDescription = "Selected",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    }
+                }
+            }
+
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
@@ -154,6 +205,7 @@ fun CharacterEditScreen(
                         greeting = greeting.ifBlank { null },
                         description = description,
                         usesNamePrefixes = usesNamePrefixes,
+                        color = color,
                     )
                     onSaved()
                 },

@@ -3,7 +3,6 @@ package net.maz.llamachat.data.model
 import androidx.compose.ui.graphics.Color
 import kotlinx.serialization.Serializable
 import net.maz.llamachat.ui.theme.DcColors
-import kotlin.math.absoluteValue
 
 /**
  * A character defines the persona for a conversation: its [context] becomes the
@@ -186,17 +185,21 @@ object Catalog {
     @Volatile
     var characters: List<Character> = builtInCharacters
 
-    /** Palette used to colour user-created / imported characters by name. */
-    private val palette: List<Color> = listOf(
+    /** Swatches offered in the character editor. Every entry is dark enough to
+     *  carry white avatar text/icons. */
+    val palette: List<Color> = listOf(
         DcColors.Primary, DcColors.PrimaryDark,
         Color(0xFF7E57C2), Color(0xFF8E24AA), Color(0xFF5C6BC0),
-        Color(0xFF26A69A), Color(0xFFEF6C00), Color(0xFFC2185B),
-        Color(0xFF00897B), Color(0xFF3949AB),
+        Color(0xFF3949AB), Color(0xFF1E88E5), Color(0xFF039BE5),
+        Color(0xFF00897B), Color(0xFF26A69A), Color(0xFF43A047),
+        Color(0xFF7CB342), Color(0xFFF9A825), Color(0xFFEF6C00),
+        Color(0xFFF4511E), Color(0xFFE53935), Color(0xFFD81B60),
+        Color(0xFFC2185B), Color(0xFF6D4C41), Color(0xFF546E7A),
     )
 
-    /** Deterministic colour for a character that didn't bring its own. */
-    fun colorFor(name: String): Color =
-        palette[name.hashCode().absoluteValue % palette.size]
+    /** Starting colour for characters that arrive without one (imported, generated):
+     *  it's settable afterwards in the editor like any other. */
+    val defaultColor: Color = palette.first()
 
     val presets: List<Preset> = listOf(
         Preset("Default", temperature = 0.7, topP = 0.9, topK = 20, repeatPenalty = 1.15),
