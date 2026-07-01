@@ -49,7 +49,7 @@ fun ConnectScreen(vm: ConnectViewModel, onConnected: () -> Unit) {
         }
     }
 
-    Column(Modifier.fillMaxSize().background(Color.White)) {
+    Column(Modifier.fillMaxSize().background(DcColors.Surface)) {
         ConnectAppBar()
         Column(
             modifier = Modifier

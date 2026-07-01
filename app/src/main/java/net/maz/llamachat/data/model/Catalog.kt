@@ -2,7 +2,7 @@ package net.maz.llamachat.data.model
 
 import androidx.compose.ui.graphics.Color
 import kotlinx.serialization.Serializable
-import net.maz.llamachat.ui.theme.DcColors
+import net.maz.llamachat.ui.theme.DcBrand
 
 /**
  * A character defines the persona for a conversation: its [context] becomes the
@@ -175,9 +175,9 @@ object Catalog {
      *  character has been deleted. The live, user-editable list lives in
      *  [characters], kept up to date by CharacterRepository. */
     val builtInCharacters: List<Character> = listOf(
-        Character("Assistant", "You are a helpful, concise assistant.", null, "Helpful, concise general assistant.", DcColors.Primary, usesNamePrefixes = false),
+        Character("Assistant", "You are a helpful, concise assistant.", null, "Helpful, concise general assistant.", DcBrand.Primary, usesNamePrefixes = false),
         Character("Default", "", null, "Neutral. No system persona.", Color(0xFF7E57C2), usesNamePrefixes = false),
-        Character("Coding Helper", "You are a senior software engineer. Explain clearly and back up explanations with concise code examples.", null, "Senior engineer. Explains with code.", DcColors.PrimaryDark, usesNamePrefixes = false),
+        Character("Coding Helper", "You are a senior software engineer. Explain clearly and back up explanations with concise code examples.", null, "Senior engineer. Explains with code.", DcBrand.PrimaryDark, usesNamePrefixes = false),
     )
 
     /** The live character list. Replaced by CharacterRepository as the user edits;
@@ -188,7 +188,7 @@ object Catalog {
     /** Swatches offered in the character editor. Every entry is dark enough to
      *  carry white avatar text/icons. */
     val palette: List<Color> = listOf(
-        DcColors.Primary, DcColors.PrimaryDark,
+        DcBrand.Primary, DcBrand.PrimaryDark,
         Color(0xFF7E57C2), Color(0xFF8E24AA), Color(0xFF5C6BC0),
         Color(0xFF3949AB), Color(0xFF1E88E5), Color(0xFF039BE5),
         Color(0xFF00897B), Color(0xFF26A69A), Color(0xFF43A047),

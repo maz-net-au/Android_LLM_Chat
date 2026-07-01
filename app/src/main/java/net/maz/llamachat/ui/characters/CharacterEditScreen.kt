@@ -72,7 +72,7 @@ fun CharacterEditScreen(
 
     val canSave = name.isNotBlank()
 
-    Column(Modifier.fillMaxSize().background(Color.White)) {
+    Column(Modifier.fillMaxSize().background(DcColors.Surface)) {
         Row(
             modifier = Modifier.fillMaxWidth().background(DcColors.Primary).height(56.dp).padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -195,7 +195,7 @@ fun CharacterEditScreen(
             }
         }
 
-        Box(Modifier.fillMaxWidth().background(Color.White).padding(16.dp)) {
+        Box(Modifier.fillMaxWidth().background(DcColors.Surface).padding(16.dp)) {
             Button(
                 onClick = {
                     vm.save(

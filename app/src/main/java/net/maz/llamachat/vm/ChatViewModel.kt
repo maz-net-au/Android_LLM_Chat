@@ -273,7 +273,7 @@ class ChatViewModel(
             updatedAt = System.currentTimeMillis(),
             messages = conv.messages.map { if (it.id == id) it.withText(text) else it },
         )
-        local.update { it.copy(editingMsgId = null, editText = "", editPrefix = "") }
+        local.update { it.copy(editingMsgId = null, editText = "", editPrefix = "", selectedMsgId = id) }
         saveThen(updated)
     }
 

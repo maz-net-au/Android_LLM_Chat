@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark variant of the base XML theme. Supplies a dark window background and
+         status/nav bar so there is no light flash before Compose draws. -->
+    <style name="Theme.LlamaChat" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/dc_page</item>
+        <item name="android:statusBarColor">@color/dc_primary</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/dc_surface</item>
+    </style>
+</resources>

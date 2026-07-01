@@ -110,7 +110,7 @@ fun ChatScreen(
         if (messages.isNotEmpty()) listState.scrollToItem(messages.lastIndex, Int.MAX_VALUE)
     }
 
-    Column(Modifier.fillMaxSize().background(Color.White)) {
+    Column(Modifier.fillMaxSize().background(DcColors.Surface)) {
         ChatAppBar(
             characterName = character?.name ?: "",
             characterColor = character?.color ?: DcColors.Primary,
@@ -457,7 +457,7 @@ private fun PillButton(label: String, icon: androidx.compose.ui.graphics.vector.
     val alpha = if (enabled) 1f else 0.4f
     Row(
         modifier = Modifier
-            .background(Color.White, RoundedCornerShape(18.dp))
+            .background(DcColors.Surface, RoundedCornerShape(18.dp))
             .border(1.dp, borderColor.copy(alpha = (borderColor.alpha * alpha)), RoundedCornerShape(18.dp))
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 7.dp),
@@ -510,7 +510,7 @@ private fun InputBar(input: String, sendEnabled: Boolean, onInputChange: (String
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .size(44.dp)
-                .background(if (sendEnabled) DcColors.Primary else Color(0xFFCFC7E3), CircleShape)
+                .background(if (sendEnabled) DcColors.Primary else DcColors.Primary.copy(alpha = 0.30f), CircleShape)
                 .clickable(enabled = sendEnabled, onClick = onSend),
         ) {
             Icon(Icons.Filled.Send, contentDescription = "Send", tint = Color.White, modifier = Modifier.size(22.dp))
