@@ -211,13 +211,7 @@ object Catalog {
     )
 
     /** Fallback model list shown before the server reports its own models. */
-    val fallbackModels: List<String> = listOf(
-        "Llama-3.1-8B-Instruct.Q5_K_M.gguf",
-        "Mistral-7B-Instruct-v0.3.Q4_K_M.gguf",
-        "Qwen2.5-14B-Instruct.Q4_K_M.gguf",
-        "gemma-2-9b-it.Q5_K_M.gguf",
-        "Phi-3.5-mini-instruct.Q6_K.gguf",
-    )
+    val fallbackModels: List<String> = listOf("")
 
     fun character(name: String): Character =
         characters.firstOrNull { it.name == name } ?: builtInCharacters.first()
