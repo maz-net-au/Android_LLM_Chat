@@ -31,42 +31,54 @@ import net.maz.llamachat.ui.theme.DcColors
 @Composable
 fun MarkdownText(text: String, modifier: Modifier = Modifier) {
     val blocks = remember(text) { parseBlocks(text) }
+    val body = DcColors.MdBody
+    // Inline span styles depend on the theme, so build them in composition.
+    val codeSpan = SpanStyle(
+        fontFamily = FontFamily.Monospace,
+        fontSize = 13.sp,
+        background = DcColors.MdCodeBg,
+        color = DcColors.PrimaryDark,
+    )
+    // System Roboto has no bundled italic face, so the synthesized slant is barely
+    // visible — pair it with a distinct color so *italic* (e.g. roleplay *actions*)
+    // reads as clearly different from body text.
+    val italicSpan = SpanStyle(fontStyle = FontStyle.Italic, color = DcColors.MdItalic)
     Column(modifier) {
         blocks.forEach { block ->
             when (block) {
                 is MdBlock.Paragraph -> Text(
-                    text = inlineAnnotated(block.text),
+                    text = inlineAnnotated(block.text, codeSpan, italicSpan),
                     fontSize = 15.sp,
                     lineHeight = 23.sp,
-                    color = BodyColor,
+                    color = body,
                     modifier = Modifier.padding(bottom = 6.dp),
                 )
                 is MdBlock.Bullets -> Column(modifier = Modifier.padding(vertical = 4.dp)) {
                     block.items.forEach { item ->
                         Row(modifier = Modifier.padding(vertical = 3.dp)) {
-                            Text("•", fontSize = 15.sp, color = BodyColor, modifier = Modifier.padding(end = 8.dp))
+                            Text("•", fontSize = 15.sp, color = body, modifier = Modifier.padding(end = 8.dp))
                             Text(
-                                text = inlineAnnotated(item),
+                                text = inlineAnnotated(item, codeSpan, italicSpan),
                                 fontSize = 15.sp,
                                 lineHeight = 23.sp,
-                                color = BodyColor,
+                                color = body,
                             )
                         }
                     }
                 }
-                is MdBlock.Code -> CodeBlock(block.code)
+                is MdBlock.Code -> CodeBlock(block.code, body)
             }
         }
     }
 }
 
 @Composable
-private fun CodeBlock(code: String) {
+private fun CodeBlock(code: String, color: Color) {
     Text(
         text = code,
         fontFamily = FontFamily.Monospace,
         fontSize = 13.sp,
-        color = BodyColor,
+        color = color,
         modifier = Modifier
             .padding(vertical = 8.dp)
             .background(DcColors.SurfaceTint, RoundedCornerShape(8.dp))
@@ -127,23 +139,10 @@ private fun parseBlocks(src: String): List<MdBlock> {
     return blocks
 }
 
-private val codeSpan = SpanStyle(
-    fontFamily = FontFamily.Monospace,
-    fontSize = 13.sp,
-    background = Color(0x1A5E35B1), // rgba(94,53,177,.10)
-    color = DcColors.PrimaryDark,
-)
 private val boldSpan = SpanStyle(fontWeight = FontWeight.Bold)
-/** Slightly darker than the global OnSurface (.87) so message text reads crisper. */
-private val BodyColor = Color(0xF2000000) // rgba(0,0,0,.95)
-
-// System Roboto has no bundled italic face, so the synthesized slant is barely
-// visible — pair it with a distinct color so *italic* (e.g. roleplay *actions*)
-// reads as clearly different from body text.
-private val italicSpan = SpanStyle(fontStyle = FontStyle.Italic, color = Color(0xFF3949AB)) // indigo
 
 /** Inline formatting matching the prototype's `inline()`: `code`, **bold**, *italic*. */
-private fun inlineAnnotated(src: String): AnnotatedString = buildAnnotatedString {
+private fun inlineAnnotated(src: String, codeSpan: SpanStyle, italicSpan: SpanStyle): AnnotatedString = buildAnnotatedString {
     var i = 0
     while (i < src.length) {
         val c = src[i]

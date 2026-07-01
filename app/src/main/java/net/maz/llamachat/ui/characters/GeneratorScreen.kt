@@ -64,7 +64,7 @@ fun GeneratorScreen(
     // Back from the review returns to the seeds; back from the seeds leaves.
     val handleBack = { if (state.phase == GenPhase.REVIEW) vm.editSeeds() else onBack() }
 
-    Column(Modifier.fillMaxSize().background(Color.White)) {
+    Column(Modifier.fillMaxSize().background(DcColors.Surface)) {
         Row(
             modifier = Modifier.fillMaxWidth().background(DcColors.Primary).height(56.dp).padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -152,7 +152,7 @@ private fun InputView(vm: GeneratorViewModel, state: net.maz.llamachat.vm.Genera
             }
         }
 
-        Box(Modifier.fillMaxWidth().background(Color.White).padding(16.dp)) {
+        Box(Modifier.fillMaxWidth().background(DcColors.Surface).padding(16.dp)) {
             Button(
                 onClick = vm::generate,
                 shape = RoundedCornerShape(4.dp),
@@ -226,7 +226,7 @@ private fun ReviewView(vm: GeneratorViewModel, state: net.maz.llamachat.vm.Gener
         }
 
         Row(
-            modifier = Modifier.fillMaxWidth().background(Color.White).padding(16.dp),
+            modifier = Modifier.fillMaxWidth().background(DcColors.Surface).padding(16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             OutlinedButton(

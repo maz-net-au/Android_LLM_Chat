@@ -69,7 +69,7 @@ fun NewConversationScreen(
         state.startedId?.let(onStarted)
     }
 
-    Column(Modifier.fillMaxSize().background(Color.White)) {
+    Column(Modifier.fillMaxSize().background(DcColors.Surface)) {
         // App bar
         Row(
             modifier = Modifier.fillMaxWidth().background(DcColors.Primary).height(56.dp).padding(horizontal = 8.dp),
@@ -124,7 +124,7 @@ fun NewConversationScreen(
         }
 
         // Bottom action bar
-        Box(Modifier.fillMaxWidth().background(Color.White).padding(16.dp)) {
+        Box(Modifier.fillMaxWidth().background(DcColors.Surface).padding(16.dp)) {
             Button(
                 onClick = vm::start,
                 shape = RoundedCornerShape(4.dp),

@@ -59,7 +59,7 @@ fun HomeScreen(
     // Re-probe the saved server each time the conversations screen is shown.
     LaunchedEffect(Unit) { vm.refreshConnection() }
 
-    Column(Modifier.fillMaxSize().background(Color.White)) {
+    Column(Modifier.fillMaxSize().background(DcColors.Surface)) {
         // App bar
         Row(
             modifier = Modifier
