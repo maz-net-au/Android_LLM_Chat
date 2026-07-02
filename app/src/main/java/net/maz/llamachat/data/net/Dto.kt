@@ -80,10 +80,13 @@ data class GenerationSettings(
 )
 
 /** Request/response for llama-server's `/tokenize`, used to count how many tokens
- *  the current transcript occupies after a reply finishes. */
+ *  the current transcript occupies after a reply finishes. [model] is required by
+ *  multi-model routers (e.g. llama-swap) to pick the backend; plain llama-server
+ *  ignores it. */
 @Serializable
 data class TokenizeRequest(
     val content: String,
+    val model: String? = null,
 )
 
 @Serializable

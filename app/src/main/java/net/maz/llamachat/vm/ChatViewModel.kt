@@ -183,7 +183,7 @@ class ChatViewModel(
             val limit = usage.value.limit
                 ?: app.llamaClient.fetchContextSize(s.ip, s.port).getOrNull()
             val tokens = app.llamaClient
-                .countTokens(s.ip, s.port, ChatRequestBuilder.transcriptForCount(conv))
+                .countTokens(s.ip, s.port, ChatRequestBuilder.transcriptForCount(conv), conv.model.ifEmpty { s.currentModel })
                 .getOrNull()
             usage.update { it.copy(tokens = tokens ?: it.tokens, limit = limit ?: it.limit) }
         }

@@ -91,7 +91,7 @@ class LlamaClient {
     /** Count the tokens in [content] using the server's own tokenizer (`/tokenize`),
      *  so the context readout is exact for the loaded model. Fails quietly (the error
      *  is logged with the server's response body so a rejection is diagnosable). */
-    suspend fun countTokens(ip: String, port: String, content: String): Result<Int> =
+    suspend fun countTokens(ip: String, port: String, content: String, model: String): Result<Int> =
         withContext(Dispatchers.IO) {
             // Empty content has nothing to tokenize; skip the round-trip (and avoid
             // sending a body some server builds reject) and report zero.
@@ -99,7 +99,7 @@ class LlamaClient {
             runCatching {
                 val request = Request.Builder()
                     .url("${base(ip, port)}/tokenize")
-                    .post(json.encodeToString(TokenizeRequest(content)).toRequestBody(jsonMedia))
+                    .post(json.encodeToString(TokenizeRequest(content, model.ifEmpty { null })).toRequestBody(jsonMedia))
                     .build()
                 client.newCall(request).execute().use { resp ->
                     val body = resp.body?.string().orEmpty()
