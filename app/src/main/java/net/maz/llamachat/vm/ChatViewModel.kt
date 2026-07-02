@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import net.maz.llamachat.LlamaChatApp
 import net.maz.llamachat.data.ConversationRepository
 import net.maz.llamachat.data.IdGen
+import net.maz.llamachat.data.backup.BackupCodec
 import net.maz.llamachat.data.gen.ChatRequestBuilder
 import net.maz.llamachat.data.gen.GenerationController
 import net.maz.llamachat.data.gen.GenerationService
@@ -420,6 +421,11 @@ class ChatViewModel(
 
     /** Consume the one-shot navigation flag once the screen has switched to details. */
     fun consumeSummarizeDone() = local.update { it.copy(summarizeDoneId = null) }
+
+    // ---- backup ------------------------------------------------------------
+
+    /** The current conversation serialized as a backup file, or null if not loaded yet. */
+    fun backupJson(): String? = base?.let { BackupCodec.encode(it) }
 
     // ---- chat menu ---------------------------------------------------------
 

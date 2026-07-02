@@ -1,5 +1,9 @@
 package net.maz.llamachat.ui.chat
 
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -39,6 +43,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
@@ -64,6 +69,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
@@ -89,6 +95,22 @@ fun ChatScreen(
 ) {
     val state by vm.ui.collectAsStateWithLifecycle()
     val conv = state.conversation
+    val context = LocalContext.current
+
+    // Export the conversation to a user-picked JSON file (a backup before summarizing).
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri: Uri? ->
+        val text = vm.backupJson()
+        if (uri == null || text == null) return@rememberLauncherForActivityResult
+        runCatching {
+            context.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) }
+        }.onSuccess {
+            Toast.makeText(context, "Conversation exported", Toast.LENGTH_SHORT).show()
+        }.onFailure {
+            Toast.makeText(context, "Export failed", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     LaunchedEffect(state.closed) { if (state.closed) onBack() }
     // A finished summarization switches to the details screen (where the summary is shown
@@ -135,6 +157,10 @@ fun ChatScreen(
             onDelete = vm::deleteConversation,
             canSummarize = state.canSummarize,
             onSummarize = vm::summarize,
+            onExport = {
+                vm.closeChatMenu()
+                exportLauncher.launch("${(conv?.title ?: "conversation").ifBlank { "conversation" }}.json")
+            },
         )
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -324,6 +350,7 @@ private fun ChatAppBar(
     onDelete: () -> Unit,
     canSummarize: Boolean,
     onSummarize: () -> Unit,
+    onExport: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().background(DcColors.Primary).height(56.dp).padding(horizontal = 6.dp),
@@ -347,6 +374,7 @@ private fun ChatAppBar(
                     ChatMenuItem(Icons.Filled.Compress, "Summarize & continue", DcColors.OnSurfaceVariant, DcColors.OnSurface, onSummarize)
                 }
                 ChatMenuItem(Icons.Filled.Refresh, "Regenerate reply", DcColors.OnSurfaceVariant, DcColors.OnSurface, onRegenerate)
+                ChatMenuItem(Icons.Filled.FileDownload, "Export conversation", DcColors.OnSurfaceVariant, DcColors.OnSurface, onExport)
                 ChatMenuItem(Icons.Filled.DeleteSweep, "Clear messages", DcColors.OnSurfaceVariant, DcColors.OnSurface, onClear)
                 ChatMenuItem(Icons.Filled.Delete, "Delete conversation", DcColors.Error, DcColors.Error, onDelete)
             }

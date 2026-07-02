@@ -8,6 +8,12 @@ enum class Role { USER, ASSISTANT }
  * A single message. Assistant messages can carry multiple [variants] (one per
  * "regenerate"); user messages always have exactly one. [activeVariant] selects
  * which variant is currently shown.
+ *
+ * ⚠️ HANDLE WITH CARE — this type is serialized into the Room blob (ConversationEntity)
+ * AND into the backup file format (see [net.maz.llamachat.data.backup.BACKUP_VERSION]).
+ * Add fields only with defaults; never rename/remove/retype an existing one. A change
+ * that isn't backwards compatible needs a DB migration and/or a backup version bump —
+ * STOP and ask the user first.
  */
 @Serializable
 data class ChatMessage(

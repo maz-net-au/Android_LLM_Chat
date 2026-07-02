@@ -13,6 +13,13 @@ private val json = Json { ignoreUnknownKeys = true }
 /**
  * One row per conversation. Messages are stored as a serialized JSON blob, which
  * keeps saves atomic and avoids a join table while remaining real persistence.
+ *
+ * ⚠️ HANDLE WITH CARE — this is the persisted schema. Changing the columns, or the
+ * shape of the serialized structures ([messagesJson], [samplingJson], [summary]),
+ * affects TWO things at once: the Room DB (needs a version bump + Migration in
+ * AppDatabase.kt) AND the on-disk backup format (see [net.maz.llamachat.data.backup]).
+ * Only add fields with safe defaults; if a change is NOT backwards compatible with
+ * existing databases or backup files, STOP and ask the user first.
  */
 @Entity(tableName = "conversations")
 data class ConversationEntity(
