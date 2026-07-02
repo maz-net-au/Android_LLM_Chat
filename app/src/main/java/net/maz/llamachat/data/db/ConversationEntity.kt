@@ -25,6 +25,7 @@ data class ConversationEntity(
     val updatedAt: Long,
     val userName: String = "user",
     val samplingJson: String = "{}",
+    val summary: String = "",
     val messagesJson: String,
 ) {
     fun toDomain(): Conversation = Conversation(
@@ -39,6 +40,7 @@ data class ConversationEntity(
         sampling = runCatching {
             json.decodeFromString<SamplingOverrides>(samplingJson)
         }.getOrDefault(SamplingOverrides()),
+        summary = summary,
         messages = runCatching {
             json.decodeFromString<List<ChatMessage>>(messagesJson)
         }.getOrDefault(emptyList()),
@@ -55,6 +57,7 @@ data class ConversationEntity(
             updatedAt = c.updatedAt,
             userName = c.userName,
             samplingJson = json.encodeToString(c.sampling),
+            summary = c.summary,
             messagesJson = json.encodeToString(c.messages),
         )
     }

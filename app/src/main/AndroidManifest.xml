@@ -36,6 +36,11 @@
             android:name=".data.gen.GenerationService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <service
+            android:name=".data.gen.SummarizationService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
 
 </manifest>

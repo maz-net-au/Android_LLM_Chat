@@ -61,6 +61,36 @@ data class ModelsResponse(
     val data: List<ModelEntry> = emptyList(),
 )
 
+/**
+ * llama-server's `/props`. The context window is reported under
+ * `default_generation_settings.n_ctx`; older builds expose it at the top level, so
+ * both spots are parsed and the first present one wins.
+ */
+@Serializable
+data class PropsResponse(
+    @SerialName("default_generation_settings") val defaultGenerationSettings: GenerationSettings? = null,
+    @SerialName("n_ctx") val nCtx: Int? = null,
+) {
+    val contextSize: Int? get() = defaultGenerationSettings?.nCtx ?: nCtx
+}
+
+@Serializable
+data class GenerationSettings(
+    @SerialName("n_ctx") val nCtx: Int? = null,
+)
+
+/** Request/response for llama-server's `/tokenize`, used to count how many tokens
+ *  the current transcript occupies after a reply finishes. */
+@Serializable
+data class TokenizeRequest(
+    val content: String,
+)
+
+@Serializable
+data class TokenizeResponse(
+    val tokens: List<Int> = emptyList(),
+)
+
 @Serializable
 data class ModelEntry(
     val id: String,

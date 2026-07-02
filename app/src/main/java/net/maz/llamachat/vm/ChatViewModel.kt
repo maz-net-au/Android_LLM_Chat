@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -19,6 +21,10 @@ import net.maz.llamachat.data.IdGen
 import net.maz.llamachat.data.gen.ChatRequestBuilder
 import net.maz.llamachat.data.gen.GenerationController
 import net.maz.llamachat.data.gen.GenerationService
+import net.maz.llamachat.data.gen.SummarizationConfig
+import net.maz.llamachat.data.gen.SummarizationController
+import net.maz.llamachat.data.gen.SummarizationService
+import net.maz.llamachat.data.gen.SummaryPhase
 import net.maz.llamachat.data.model.ChatMessage
 import net.maz.llamachat.data.model.Conversation
 import net.maz.llamachat.data.model.Role
@@ -38,6 +44,20 @@ data class ChatUiState(
     val chatMenuOpen: Boolean = false,
     /** True once the conversation has been deleted — the screen pops to Home. */
     val closed: Boolean = false,
+    /** True while a summarization is streaming for this chat. */
+    val summarizing: Boolean = false,
+    /** Live summary text as it streams, for an in-progress preview. */
+    val summaryProgress: String = "",
+    /** Set to this chat's id once a summarization finishes, so the screen can switch
+     *  to the details view. One-shot: cleared via [ChatViewModel.consumeSummarizeDone]. */
+    val summarizeDoneId: Long? = null,
+    /** True when the chat has enough history to be worth summarizing. */
+    val canSummarize: Boolean = false,
+    /** Exact token count of the transcript from the server's `/tokenize`, measured
+     *  after each reply finishes; null until the first measurement lands. */
+    val tokenCount: Int? = null,
+    /** The server's context window (`n_ctx`) from `/props`, or null while unknown. */
+    val contextLimit: Int? = null,
 )
 
 /**
@@ -57,6 +77,7 @@ class ChatViewModel(
 
     private val repo: ConversationRepository = app.conversationRepository
     private val controller: GenerationController = app.generation
+    private val summarizer: SummarizationController = app.summarization
 
     /** Transient, screen-only state that never touches Room. */
     private data class Local(
@@ -68,16 +89,23 @@ class ChatViewModel(
         val editPrefix: String = "",
         val chatMenuOpen: Boolean = false,
         val closed: Boolean = false,
+        val summarizeDoneId: Long? = null,
     )
 
     private val local = MutableStateFlow(Local())
+
+    /** Context usage, refreshed after each generation: the exact token count of the
+     *  transcript (`/tokenize`) and the model's window (`/props`). Both null until
+     *  first measured; kept together so the UI combine stays a single extra source. */
+    private data class Usage(val tokens: Int? = null, val limit: Int? = null)
+    private val usage = MutableStateFlow(Usage())
 
     /** Latest persisted conversation, cached so the action handlers (send, edit,
      *  delete, …) can read-modify-write without an extra suspend round-trip. */
     @Volatile private var base: Conversation? = null
 
     val ui: StateFlow<ChatUiState> =
-        combine(local, repo.observe(convId), controller.state) { l, conv, gen ->
+        combine(local, repo.observe(convId), controller.state, usage, summarizer.state) { l, conv, gen, u, sum ->
             base = conv
             val streaming = gen != null && gen.convId == convId
             val merged = when {
@@ -87,6 +115,7 @@ class ChatViewModel(
                     })
                 else -> conv
             }
+            val summarizing = sum != null && sum.convId == convId && sum.phase == SummaryPhase.RUNNING
             ChatUiState(
                 loaded = true,
                 conversation = merged,
@@ -99,22 +128,75 @@ class ChatViewModel(
                 editPrefix = l.editPrefix,
                 chatMenuOpen = l.chatMenuOpen,
                 closed = l.closed,
+                summarizing = summarizing,
+                summaryProgress = if (summarizing) sum!!.text else "",
+                summarizeDoneId = l.summarizeDoneId,
+                canSummarize = merged != null && SummarizationConfig.canSummarize(merged.messages.size),
+                tokenCount = u.tokens,
+                contextLimit = u.limit,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
     init {
         // Prime [base] so actions work even before the UI starts collecting.
         viewModelScope.launch { base = repo.get(convId) }
+        // Measure context usage whenever a generation for this chat finishes — and
+        // once on open, since the flow starts out inactive. distinctUntilChanged keeps
+        // us to the active→inactive edges rather than every token. The service persists
+        // the final text before clearing this state, so Room is up to date by now.
+        viewModelScope.launch {
+            controller.state
+                .map { it?.convId == convId }
+                .distinctUntilChanged()
+                .collect { active -> if (!active) refreshUsage() }
+        }
+        // React to a finished summarization: on DONE, flag the one-shot navigation to
+        // the details screen and re-measure usage (the transcript just shrank); either
+        // outcome clears the shared state so a later run starts clean.
+        viewModelScope.launch {
+            summarizer.state.collect { st ->
+                if (st == null || st.convId != convId) return@collect
+                when (st.phase) {
+                    SummaryPhase.DONE -> {
+                        local.update { it.copy(summarizeDoneId = convId, chatMenuOpen = false) }
+                        summarizer.clear(convId)
+                        refreshUsage()
+                    }
+                    SummaryPhase.FAILED -> summarizer.clear(convId)
+                    SummaryPhase.RUNNING -> {}
+                }
+            }
+        }
+    }
+
+    /** Re-measure token usage against the server: exact transcript tokens via
+     *  `/tokenize`, plus the context window via `/props` if not yet known. The
+     *  context window can only be read once the server has a model loaded, which a
+     *  finished reply guarantees. Failures leave the previous values in place. */
+    private var usageJob: Job? = null
+    private fun refreshUsage() {
+        usageJob?.cancel()
+        usageJob = viewModelScope.launch {
+            val conv = repo.get(convId) ?: return@launch
+            val s = app.settingsRepository.current()
+            val limit = usage.value.limit
+                ?: app.llamaClient.fetchContextSize(s.ip, s.port).getOrNull()
+            val tokens = app.llamaClient
+                .countTokens(s.ip, s.port, ChatRequestBuilder.transcriptForCount(conv))
+                .getOrNull()
+            usage.update { it.copy(tokens = tokens ?: it.tokens, limit = limit ?: it.limit) }
+        }
     }
 
     private fun isStreaming(): Boolean = controller.isActive(convId)
+    private fun isBusy(): Boolean = controller.isActive(convId) || summarizer.isActive(convId)
 
     // ---- input -------------------------------------------------------------
 
     fun setInput(v: String) = local.update { it.copy(input = v) }
 
     fun send() {
-        if (isStreaming()) return
+        if (isBusy()) return
         // A blank message is allowed: it appends an empty user turn and forces the
         // assistant to take another turn.
         val text = local.value.input.trim()
@@ -145,7 +227,7 @@ class ChatViewModel(
 
     /** Add a fresh variant to the last assistant message and regenerate it. */
     fun regenerate() {
-        if (isStreaming()) return
+        if (isBusy()) return
         val conv = base ?: return
         val last = conv.messages.lastOrNull { it.role == Role.ASSISTANT } ?: return
         val prefixes = conv.character.usesNamePrefixes
@@ -162,7 +244,7 @@ class ChatViewModel(
     }
 
     fun continueMessage(id: Long) {
-        if (isStreaming()) return
+        if (isBusy()) return
         local.update { it.copy(selectedMsgId = null) }
         // The partial is already in Room; the service reads and extends it.
         GenerationService.start(app, convId, id, includePartial = true, forceContinue = true, title = base?.title ?: "")
@@ -174,6 +256,7 @@ class ChatViewModel(
      *  whatever it had written into the input. */
     fun stop() {
         GenerationService.cancel(app)
+        SummarizationService.cancel(app)
         impersonateJob?.cancel()
     }
 
@@ -188,7 +271,7 @@ class ChatViewModel(
      * the shared Stop button.
      */
     fun impersonate() {
-        if (isStreaming() || local.value.impersonating) return
+        if (isBusy() || local.value.impersonating) return
         val conv = base ?: return
         local.update { it.copy(impersonating = true, input = "", selectedMsgId = null, chatMenuOpen = false) }
         impersonateJob = viewModelScope.launch {
@@ -240,6 +323,7 @@ class ChatViewModel(
     fun startEdit(id: Long) {
         val conv = base ?: return
         val m = conv.messages.firstOrNull { it.id == id } ?: return
+        if (m.locked) return // summarized messages are frozen
         // Edit the text without its "Name:" prefix; remember the exact prefix to re-apply.
         val name = if (m.role == Role.USER) conv.userName else conv.characterName
         val editPrefix = namePrefix(m.text, name)
@@ -308,7 +392,8 @@ class ChatViewModel(
 
     fun clearMessages() {
         val conv = base ?: return
-        val updated = conv.copy(updatedAt = System.currentTimeMillis(), messages = emptyList())
+        // Clearing wipes the history the summary described, so drop the summary too.
+        val updated = conv.copy(updatedAt = System.currentTimeMillis(), messages = emptyList(), summary = "")
         local.update { it.copy(chatMenuOpen = false, selectedMsgId = null) }
         saveThen(updated)
     }
@@ -320,6 +405,21 @@ class ChatViewModel(
             local.update { it.copy(chatMenuOpen = false, closed = true) }
         }
     }
+
+    // ---- summarize ---------------------------------------------------------
+
+    /** Compact the older messages into the conversation [summary] and lock them,
+     *  freeing context so the chat can continue. Runs in the background service. */
+    fun summarize() {
+        val conv = base ?: return
+        if (isBusy() || local.value.impersonating) return
+        if (!SummarizationConfig.canSummarize(conv.messages.size)) return
+        local.update { it.copy(chatMenuOpen = false, selectedMsgId = null) }
+        SummarizationService.start(app, convId, conv.title)
+    }
+
+    /** Consume the one-shot navigation flag once the screen has switched to details. */
+    fun consumeSummarizeDone() = local.update { it.copy(summarizeDoneId = null) }
 
     // ---- chat menu ---------------------------------------------------------
 

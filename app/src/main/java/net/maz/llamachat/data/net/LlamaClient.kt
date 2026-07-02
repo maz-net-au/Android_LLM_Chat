@@ -66,6 +66,46 @@ class LlamaClient {
             }
         }
 
+    /** Fetch the server's context window size (`n_ctx`) from `/props`, used to show
+     *  how full the current conversation is. Fails quietly (caller treats a failure
+     *  as "limit unknown" and just omits the percentage). */
+    suspend fun fetchContextSize(ip: String, port: String): Result<Int> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val request = Request.Builder()
+                    .url("${base(ip, port)}/props")
+                    .get()
+                    .build()
+                client.newCall(request).execute().use { resp ->
+                    if (!resp.isSuccessful) {
+                        error("Server returned HTTP ${resp.code}")
+                    }
+                    val body = resp.body?.string().orEmpty()
+                    json.decodeFromString<PropsResponse>(body).contextSize
+                        ?: error("Server did not report n_ctx")
+                }
+            }
+        }
+
+    /** Count the tokens in [content] using the server's own tokenizer (`/tokenize`),
+     *  so the context readout is exact for the loaded model. Fails quietly. */
+    suspend fun countTokens(ip: String, port: String, content: String): Result<Int> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val request = Request.Builder()
+                    .url("${base(ip, port)}/tokenize")
+                    .post(json.encodeToString(TokenizeRequest(content)).toRequestBody(jsonMedia))
+                    .build()
+                client.newCall(request).execute().use { resp ->
+                    if (!resp.isSuccessful) {
+                        error("Server returned HTTP ${resp.code}")
+                    }
+                    val body = resp.body?.string().orEmpty()
+                    json.decodeFromString<TokenizeResponse>(body).tokens.size
+                }
+            }
+        }
+
     /**
      * Stream a chat completion. Emits incremental text deltas; the flow
      * completes when the server sends the `[DONE]` sentinel and fails (throws)

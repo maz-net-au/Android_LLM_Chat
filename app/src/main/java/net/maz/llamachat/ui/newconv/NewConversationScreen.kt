@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -121,6 +122,26 @@ fun NewConversationScreen(
             Spacer(Modifier.height(22.dp))
             SectionLabel("PARAMETER PRESET")
             PresetSelector(vm, selectedName = state.preset, samplingText = state.samplingText)
+
+            // Only existing chats have a summary — it's produced by "Summarize & continue".
+            if (state.editing) {
+                Spacer(Modifier.height(22.dp))
+                SectionLabel("SUMMARY")
+                Text(
+                    "Sent as context for future replies, in place of the older (summarized) messages. Edit freely.",
+                    fontSize = 12.sp,
+                    color = DcColors.OnSurfaceFaint,
+                    modifier = Modifier.padding(bottom = 6.dp),
+                )
+                DcTextField(
+                    label = "",
+                    value = state.summary,
+                    onValueChange = vm::setSummary,
+                    placeholder = "No summary yet — use “Summarize & continue” in the chat menu.",
+                    singleLine = false,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
+                )
+            }
         }
 
         // Bottom action bar
