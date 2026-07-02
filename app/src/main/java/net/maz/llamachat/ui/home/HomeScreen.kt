@@ -1,5 +1,9 @@
 package net.maz.llamachat.ui.home
 
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,6 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.outlined.Forum
@@ -34,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -45,6 +51,7 @@ import net.maz.llamachat.ui.components.Avatar
 import net.maz.llamachat.ui.theme.DcColors
 import net.maz.llamachat.vm.ConnStatus
 import net.maz.llamachat.vm.HomeViewModel
+import net.maz.llamachat.vm.ImportResult
 
 @Composable
 fun HomeScreen(
@@ -55,6 +62,31 @@ fun HomeScreen(
     onOpenServer: () -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+
+    // Restore a conversation from a backup JSON file (best-effort, overwrites by id).
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val text = runCatching {
+            context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+        }.getOrNull()
+        if (text == null) {
+            Toast.makeText(context, "Couldn't read file", Toast.LENGTH_SHORT).show()
+            return@rememberLauncherForActivityResult
+        }
+        vm.import(text) { result ->
+            val msg = when (result) {
+                is ImportResult.Restored ->
+                    if (result.missingCharacter != null)
+                        "Restored “${result.title}” — character ‘${result.missingCharacter}’ not found"
+                    else "Restored “${result.title}”"
+                ImportResult.Failed -> "Not a valid conversation backup"
+            }
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+        }
+    }
 
     // Re-probe the saved server each time the conversations screen is shown.
     LaunchedEffect(Unit) { vm.refreshConnection() }
@@ -78,6 +110,9 @@ fun HomeScreen(
                 modifier = Modifier.weight(1f),
             )
             ConnectionChip(status = state.connection, onClick = onOpenServer)
+            IconButton(onClick = { importLauncher.launch(arrayOf("application/json", "*/*")) }) {
+                Icon(Icons.Filled.FileUpload, contentDescription = "Import conversation", tint = Color.White, modifier = Modifier.size(22.dp))
+            }
             IconButton(onClick = onManageCharacters) {
                 Icon(Icons.Filled.ManageAccounts, contentDescription = "Characters", tint = Color.White, modifier = Modifier.size(24.dp))
             }

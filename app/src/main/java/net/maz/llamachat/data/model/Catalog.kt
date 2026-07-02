@@ -88,6 +88,11 @@ data class Preset(
  * means "inherit from the conversation's named preset". Persisted as a JSON blob on
  * the conversation so a chat can be tuned without affecting any other chat or the
  * shared preset library.
+ *
+ * ⚠️ HANDLE WITH CARE — like [ChatMessage], this is serialized into the Room blob and
+ * the backup file format ([net.maz.llamachat.data.backup.BACKUP_VERSION]). Add fields
+ * only with defaults; a non-backwards-compatible change needs a migration / version
+ * bump — STOP and ask the user first.
  */
 @Serializable
 data class SamplingOverrides(
