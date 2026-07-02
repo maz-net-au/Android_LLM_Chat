@@ -71,6 +71,19 @@ object ChatRequestBuilder {
         return request(conv, out, s, maxTokens = 1000)
     }
 
+    /**
+     * The whole conversation as one string for token counting via `/tokenize`:
+     * the system persona followed by every message's stored text. This mirrors the
+     * content [reply] would send (minus the chat template's per-message role framing,
+     * which the server adds), which is close enough to gauge how full the context is.
+     */
+    fun transcriptForCount(conv: Conversation): String = buildString {
+        conv.character.resolvedContext(conv.userName).takeIf { it.isNotBlank() }?.let {
+            appendLine(it)
+        }
+        conv.messages.forEach { appendLine(it.text) }
+    }
+
     private fun systemMessage(conv: Conversation): ApiMessage? =
         conv.character.resolvedContext(conv.userName).takeIf { it.isNotBlank() }
             ?.let { ApiMessage("system", it) }

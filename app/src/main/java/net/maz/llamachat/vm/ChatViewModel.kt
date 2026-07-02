@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -38,6 +40,11 @@ data class ChatUiState(
     val chatMenuOpen: Boolean = false,
     /** True once the conversation has been deleted — the screen pops to Home. */
     val closed: Boolean = false,
+    /** Exact token count of the transcript from the server's `/tokenize`, measured
+     *  after each reply finishes; null until the first measurement lands. */
+    val tokenCount: Int? = null,
+    /** The server's context window (`n_ctx`) from `/props`, or null while unknown. */
+    val contextLimit: Int? = null,
 )
 
 /**
@@ -72,12 +79,18 @@ class ChatViewModel(
 
     private val local = MutableStateFlow(Local())
 
+    /** Context usage, refreshed after each generation: the exact token count of the
+     *  transcript (`/tokenize`) and the model's window (`/props`). Both null until
+     *  first measured; kept together so the UI combine stays a single extra source. */
+    private data class Usage(val tokens: Int? = null, val limit: Int? = null)
+    private val usage = MutableStateFlow(Usage())
+
     /** Latest persisted conversation, cached so the action handlers (send, edit,
      *  delete, …) can read-modify-write without an extra suspend round-trip. */
     @Volatile private var base: Conversation? = null
 
     val ui: StateFlow<ChatUiState> =
-        combine(local, repo.observe(convId), controller.state) { l, conv, gen ->
+        combine(local, repo.observe(convId), controller.state, usage) { l, conv, gen, u ->
             base = conv
             val streaming = gen != null && gen.convId == convId
             val merged = when {
@@ -99,12 +112,43 @@ class ChatViewModel(
                 editPrefix = l.editPrefix,
                 chatMenuOpen = l.chatMenuOpen,
                 closed = l.closed,
+                tokenCount = u.tokens,
+                contextLimit = u.limit,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
     init {
         // Prime [base] so actions work even before the UI starts collecting.
         viewModelScope.launch { base = repo.get(convId) }
+        // Measure context usage whenever a generation for this chat finishes — and
+        // once on open, since the flow starts out inactive. distinctUntilChanged keeps
+        // us to the active→inactive edges rather than every token. The service persists
+        // the final text before clearing this state, so Room is up to date by now.
+        viewModelScope.launch {
+            controller.state
+                .map { it?.convId == convId }
+                .distinctUntilChanged()
+                .collect { active -> if (!active) refreshUsage() }
+        }
+    }
+
+    /** Re-measure token usage against the server: exact transcript tokens via
+     *  `/tokenize`, plus the context window via `/props` if not yet known. The
+     *  context window can only be read once the server has a model loaded, which a
+     *  finished reply guarantees. Failures leave the previous values in place. */
+    private var usageJob: Job? = null
+    private fun refreshUsage() {
+        usageJob?.cancel()
+        usageJob = viewModelScope.launch {
+            val conv = repo.get(convId) ?: return@launch
+            val s = app.settingsRepository.current()
+            val limit = usage.value.limit
+                ?: app.llamaClient.fetchContextSize(s.ip, s.port).getOrNull()
+            val tokens = app.llamaClient
+                .countTokens(s.ip, s.port, ChatRequestBuilder.transcriptForCount(conv))
+                .getOrNull()
+            usage.update { it.copy(tokens = tokens ?: it.tokens, limit = limit ?: it.limit) }
+        }
     }
 
     private fun isStreaming(): Boolean = controller.isActive(convId)

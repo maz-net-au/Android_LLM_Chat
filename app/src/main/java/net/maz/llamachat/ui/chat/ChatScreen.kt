@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -76,6 +77,7 @@ import net.maz.llamachat.ui.components.Avatar
 import net.maz.llamachat.ui.components.MarkdownText
 import net.maz.llamachat.ui.theme.DcColors
 import net.maz.llamachat.vm.ChatViewModel
+import kotlin.math.roundToInt
 
 @Composable
 fun ChatScreen(
@@ -174,6 +176,8 @@ fun ChatScreen(
             )
         }
 
+        ContextMeter(tokenCount = state.tokenCount, contextLimit = state.contextLimit)
+
         InputBar(
             input = state.input,
             // Blank sends are allowed (forces the assistant to take another turn);
@@ -184,6 +188,47 @@ fun ChatScreen(
         )
     }
 }
+
+/**
+ * A slim footer showing how full the model's context is: the transcript's token
+ * count (measured by the server after each reply) and, once the window size is
+ * known, the percentage used. At 90%+ it flips to the error color with a warning
+ * glyph — a soft nudge that the oldest turns are about to fall out of context, not
+ * a hard block.
+ */
+@Composable
+private fun ContextMeter(tokenCount: Int?, contextLimit: Int?) {
+    // Nothing measured yet (fresh chat, or the server hasn't answered) — stay hidden
+    // rather than show a placeholder zero.
+    if (tokenCount == null) return
+    val fraction = contextLimit?.takeIf { it > 0 }?.let { tokenCount.toFloat() / it }
+    val warn = fraction != null && fraction >= 0.9f
+    val color = if (warn) DcColors.Error else DcColors.OnSurfaceFaint
+    val label = buildString {
+        append(formatTokens(tokenCount))
+        if (contextLimit != null) {
+            append(" / ")
+            append(formatTokens(contextLimit))
+        }
+        append(" tokens")
+        if (fraction != null) append(" · ${(fraction * 100).roundToInt()}%")
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 2.dp),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (warn) {
+            Icon(Icons.Filled.Warning, contentDescription = "Context nearly full", tint = color, modifier = Modifier.size(13.dp))
+            Spacer(Modifier.width(4.dp))
+        }
+        Text(label, color = color, fontSize = 11.sp, fontWeight = if (warn) FontWeight.SemiBold else FontWeight.Normal)
+    }
+}
+
+/** Group thousands with commas so large counts stay readable (e.g. "12,345"). */
+private fun formatTokens(n: Int): String =
+    n.toString().reversed().chunked(3).joinToString(",").reversed()
 
 @Composable
 private fun ChatAppBar(
