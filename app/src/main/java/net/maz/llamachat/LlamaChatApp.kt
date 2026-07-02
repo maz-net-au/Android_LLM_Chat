@@ -6,6 +6,7 @@ import net.maz.llamachat.data.ConversationRepository
 import net.maz.llamachat.data.SettingsRepository
 import net.maz.llamachat.data.db.AppDatabase
 import net.maz.llamachat.data.gen.GenerationController
+import net.maz.llamachat.data.gen.SummarizationController
 import net.maz.llamachat.data.model.Catalog
 import net.maz.llamachat.data.net.LlamaClient
 import kotlinx.coroutines.CoroutineScope
@@ -41,6 +42,8 @@ class LlamaChatApp : Application() {
     val session = ServerSession()
     /** Live progress of the in-flight reply, shared with the GenerationService. */
     val generation = GenerationController()
+    /** Live state of the in-flight summarization, shared with the SummarizationService. */
+    val summarization = SummarizationController()
 
     /** App-scoped, for connection probes that outlive any single screen. */
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)

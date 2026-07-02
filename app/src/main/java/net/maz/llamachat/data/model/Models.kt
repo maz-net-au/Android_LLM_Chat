@@ -15,6 +15,10 @@ data class ChatMessage(
     val role: Role,
     val variants: List<String> = listOf(""),
     val activeVariant: Int = 0,
+    /** Frozen once folded into the conversation [Conversation.summary]: still shown,
+     *  but no longer editable/deletable and no longer sent to the model (the summary
+     *  stands in for it). Older messages are always locked as a prefix. */
+    val locked: Boolean = false,
 ) {
     val text: String get() = variants.getOrElse(activeVariant) { "" }
     val variantCount: Int get() = variants.size
@@ -47,6 +51,10 @@ data class Conversation(
     val userName: String = "user",
     /** Per-chat sampling tweaks layered over [presetName]; empty = pure preset. */
     val sampling: SamplingOverrides = SamplingOverrides(),
+    /** Running summary of the locked (older) part of the chat. When set, it replaces
+     *  those messages in every request, letting the conversation continue past the
+     *  model's context window. Editable in the chat-details screen. */
+    val summary: String = "",
     val messages: List<ChatMessage> = emptyList(),
 ) {
     val character get() = Catalog.character(characterName)

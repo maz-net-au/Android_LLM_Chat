@@ -26,7 +26,8 @@ object ChatRequestBuilder {
         val out = ArrayList<ApiMessage>()
         systemMessage(conv)?.let { out += it }
         conv.messages.forEachIndexed { i, m ->
-            if (i < assistantIndex) out += apiMessage(m.role, m.text)
+            // Locked messages are represented by the summary in [systemMessage], not resent.
+            if (i < assistantIndex && !m.locked) out += apiMessage(m.role, m.text)
         }
         if (includePartial) {
             // Sent verbatim, including any trailing space, so the model continues from
@@ -58,6 +59,7 @@ object ChatRequestBuilder {
         systemMessage(conv)?.let { out += it }
         val last = conv.messages.lastIndex
         conv.messages.forEachIndexed { i, m ->
+            if (m.locked) return@forEachIndexed // folded into the summary; not resent
             if (i == last && m.role == Role.ASSISTANT && conv.character.usesNamePrefixes) {
                 // No trailing space after the "Name:" prefix: ending the prompt on a
                 // lone space token makes the model predict end-of-turn immediately
@@ -73,20 +75,63 @@ object ChatRequestBuilder {
 
     /**
      * The whole conversation as one string for token counting via `/tokenize`:
-     * the system persona followed by every message's stored text. This mirrors the
-     * content [reply] would send (minus the chat template's per-message role framing,
-     * which the server adds), which is close enough to gauge how full the context is.
+     * the system persona (with any summary) followed by every unlocked message's
+     * stored text. This mirrors the content [reply] would send (minus the chat
+     * template's per-message role framing, which the server adds), so the readout
+     * reflects the reduced context once older messages have been summarized.
      */
     fun transcriptForCount(conv: Conversation): String = buildString {
-        conv.character.resolvedContext(conv.userName).takeIf { it.isNotBlank() }?.let {
-            appendLine(it)
+        systemContent(conv).takeIf { it.isNotBlank() }?.let { appendLine(it) }
+        conv.messages.forEach { if (!it.locked) appendLine(it.text) }
+    }
+
+    /**
+     * Build the request that compacts the older part of [conv] into a fresh summary.
+     * Fold strategy: the prior summary (if any) plus the messages being locked now —
+     * the unlocked messages at index < [keepFrom] — with `<think>` reasoning stripped.
+     */
+    fun summarize(conv: Conversation, keepFrom: Int, s: SettingsRepository.Settings): ChatRequest {
+        val userTurn = buildString {
+            if (conv.summary.isNotBlank()) {
+                appendLine(SummarizationConfig.PREVIOUS_SUMMARY_LABEL)
+                appendLine(conv.summary)
+                appendLine()
+                appendLine("New messages since then:")
+            }
+            conv.messages.take(keepFrom).forEach { m ->
+                if (!m.locked) appendLine(stripThink(m.text))
+            }
+            appendLine()
+            append(SummarizationConfig.FOLD_INSTRUCTION)
         }
-        conv.messages.forEach { appendLine(it.text) }
+        val messages = listOf(
+            ApiMessage("system", SummarizationConfig.systemPrompt(conv.character.usesNamePrefixes)),
+            ApiMessage("user", userTurn),
+        )
+        val preset = SummarizationConfig.sampling
+        return ChatRequest(
+            model = conv.model.ifEmpty { s.currentModel },
+            messages = messages,
+            stream = true,
+            stop = null,
+            maxTokens = SummarizationConfig.MAX_SUMMARY_TOKENS,
+            temperature = preset.temperature,
+            topP = preset.topP,
+            topK = preset.topK,
+            repeatPenalty = preset.repeatPenalty,
+        )
+    }
+
+    /** The system persona plus, when present, the running summary of older messages. */
+    private fun systemContent(conv: Conversation): String {
+        val context = conv.character.resolvedContext(conv.userName)
+        val summary = conv.summary.takeIf { it.isNotBlank() }
+            ?.let { "## Story so far\n$it" }
+        return listOfNotNull(context.takeIf { it.isNotBlank() }, summary).joinToString("\n\n")
     }
 
     private fun systemMessage(conv: Conversation): ApiMessage? =
-        conv.character.resolvedContext(conv.userName).takeIf { it.isNotBlank() }
-            ?.let { ApiMessage("system", it) }
+        systemContent(conv).takeIf { it.isNotBlank() }?.let { ApiMessage("system", it) }
 
     private fun apiMessage(role: Role, text: String): ApiMessage =
         ApiMessage(if (role == Role.USER) "user" else "assistant", text)

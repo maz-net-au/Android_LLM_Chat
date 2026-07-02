@@ -34,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
@@ -46,6 +47,7 @@ import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -89,11 +91,17 @@ fun ChatScreen(
     val conv = state.conversation
 
     LaunchedEffect(state.closed) { if (state.closed) onBack() }
+    // A finished summarization switches to the details screen (where the summary is shown
+    // and editable), then clears the one-shot flag so returning here doesn't re-navigate.
+    LaunchedEffect(state.summarizeDoneId) {
+        state.summarizeDoneId?.let { onEditDetails(it); vm.consumeSummarizeDone() }
+    }
 
     val character = conv?.character
     val messages = conv?.messages ?: emptyList()
     val userName = conv?.userName ?: "You"
     val characterName = conv?.characterName ?: ""
+    val firstUnlockedIndex = messages.indexOfFirst { !it.locked }
     val lastAssistantIndex = messages.indexOfLast { it.role == Role.ASSISTANT }
     val lastIsAssistant = messages.lastOrNull()?.role == Role.ASSISTANT
     val showActions = state.streaming || lastIsAssistant
@@ -125,6 +133,8 @@ fun ChatScreen(
             onRegenerate = vm::regenerate,
             onClear = vm::clearMessages,
             onDelete = vm::deleteConversation,
+            canSummarize = state.canSummarize,
+            onSummarize = vm::summarize,
         )
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -137,10 +147,19 @@ fun ChatScreen(
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 16.dp, bottom = 8.dp),
                 ) {
                     itemsIndexed(messages, key = { _, m -> m.id }) { index, message ->
+                        // Mark where the summarized (locked) history ends and the live
+                        // transcript resumes, but only when a summary actually stands in
+                        // for those older messages.
+                        if (index == firstUnlockedIndex && firstUnlockedIndex > 0 &&
+                            conv?.summary?.isNotBlank() == true
+                        ) {
+                            SummarizedDivider()
+                        }
                         MessageItem(
                             message = message,
                             userName = userName,
                             characterName = characterName,
+                            locked = message.locked,
                             editing = state.editingMsgId == message.id,
                             selected = state.selectedMsgId == message.id,
                             isLastAssistant = index == lastAssistantIndex,
@@ -176,13 +195,17 @@ fun ChatScreen(
             )
         }
 
+        if (state.summarizing) {
+            SummarizingBanner(progress = state.summaryProgress, onCancel = vm::stop)
+        }
+
         ContextMeter(tokenCount = state.tokenCount, contextLimit = state.contextLimit)
 
         InputBar(
             input = state.input,
             // Blank sends are allowed (forces the assistant to take another turn);
-            // only an in-flight reply or impersonation disables the button.
-            sendEnabled = !state.streaming && !state.impersonating,
+            // only an in-flight reply, impersonation or summarization disables the button.
+            sendEnabled = !state.streaming && !state.impersonating && !state.summarizing,
             onInputChange = vm::setInput,
             onSend = vm::send,
         )
@@ -230,6 +253,62 @@ private fun ContextMeter(tokenCount: Int?, contextLimit: Int?) {
 private fun formatTokens(n: Int): String =
     n.toString().reversed().chunked(3).joinToString(",").reversed()
 
+/** Marks the boundary between the summarized (locked) history above and the live
+ *  transcript below, so it's clear those older turns are now folded into the summary. */
+@Composable
+private fun SummarizedDivider() {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.weight(1f).height(1.dp).background(DcColors.Divider))
+        Text(
+            "summarized",
+            fontSize = 11.sp,
+            color = DcColors.OnSurfaceFaint,
+            fontWeight = FontWeight.Medium,
+            letterSpacing = 0.5.sp,
+            modifier = Modifier.padding(horizontal = 10.dp),
+        )
+        Box(Modifier.weight(1f).height(1.dp).background(DcColors.Divider))
+    }
+}
+
+/** Shown while a summarization streams in the background: a live, truncated preview of
+ *  the summary plus a Cancel. Input and actions are disabled meanwhile. */
+@Composable
+private fun SummarizingBanner(progress: String, onCancel: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .background(DcColors.PrimaryContainer, RoundedCornerShape(10.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircularProgressIndicator(
+            color = DcColors.Primary,
+            strokeWidth = 2.dp,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Summarizing…", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = DcColors.OnSurface)
+            if (progress.isNotBlank()) {
+                Text(
+                    progress,
+                    fontSize = 12.sp,
+                    color = DcColors.OnSurfaceMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+        }
+        TextActionButton("Cancel", DcColors.OnSurfaceVariant, onCancel)
+    }
+}
+
 @Composable
 private fun ChatAppBar(
     characterName: String,
@@ -243,6 +322,8 @@ private fun ChatAppBar(
     onRegenerate: () -> Unit,
     onClear: () -> Unit,
     onDelete: () -> Unit,
+    canSummarize: Boolean,
+    onSummarize: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().background(DcColors.Primary).height(56.dp).padding(horizontal = 6.dp),
@@ -262,6 +343,9 @@ private fun ChatAppBar(
             }
             DropdownMenu(expanded = menuOpen, onDismissRequest = onDismissMenu) {
                 ChatMenuItem(Icons.Filled.EditNote, "Edit chat details", DcColors.OnSurfaceVariant, DcColors.OnSurface, onEditDetails)
+                if (canSummarize) {
+                    ChatMenuItem(Icons.Filled.Compress, "Summarize & continue", DcColors.OnSurfaceVariant, DcColors.OnSurface, onSummarize)
+                }
                 ChatMenuItem(Icons.Filled.Refresh, "Regenerate reply", DcColors.OnSurfaceVariant, DcColors.OnSurface, onRegenerate)
                 ChatMenuItem(Icons.Filled.DeleteSweep, "Clear messages", DcColors.OnSurfaceVariant, DcColors.OnSurface, onClear)
                 ChatMenuItem(Icons.Filled.Delete, "Delete conversation", DcColors.Error, DcColors.Error, onDelete)
@@ -300,6 +384,7 @@ private fun MessageItem(
     message: ChatMessage,
     userName: String,
     characterName: String,
+    locked: Boolean,
     editing: Boolean,
     selected: Boolean,
     isLastAssistant: Boolean,
@@ -331,7 +416,8 @@ private fun MessageItem(
                 if (!isUser && message.variantCount > 1) {
                     VariantNav(message, onPrevVariant, onNextVariant)
                 }
-                if (selected) {
+                // Locked (summarized) messages are frozen: no edit/continue/delete.
+                if (selected && !locked) {
                     SelectedActions(isLastAssistant, onStartEdit, onContinue, onDelete)
                 }
             }

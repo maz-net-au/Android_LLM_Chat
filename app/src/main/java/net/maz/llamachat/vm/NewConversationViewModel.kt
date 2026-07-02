@@ -32,6 +32,8 @@ data class NewConvUiState(
     val userName: String = "user",
     /** Raw text per overridden sampling param; absent/blank = inherit from [preset]. */
     val samplingText: Map<SamplingParam, String> = emptyMap(),
+    /** The conversation's running summary (edit mode only); sent as context for replies. */
+    val summary: String = "",
     val openMenu: NewMenu = NewMenu.NONE,
     /** Set to the conversation id once started/saved, for the screen to navigate. */
     val startedId: Long? = null,
@@ -61,6 +63,7 @@ class NewConversationViewModel(
                             model = c.model.ifEmpty { current.currentModel },
                             userName = c.userName,
                             samplingText = samplingTextFrom(c.sampling),
+                            summary = c.summary,
                         )
                     }
                 }
@@ -78,6 +81,7 @@ class NewConversationViewModel(
 
     fun setTitle(v: String) = _state.update { it.copy(title = v) }
     fun setUserName(v: String) = _state.update { it.copy(userName = v) }
+    fun setSummary(v: String) = _state.update { it.copy(summary = v) }
     fun selectCharacter(name: String) = _state.update { it.copy(character = name, openMenu = NewMenu.NONE) }
     // Switching the preset template starts from a clean slate (the new preset's values).
     fun selectPreset(name: String) = _state.update { it.copy(preset = name, samplingText = emptyMap(), openMenu = NewMenu.NONE) }
@@ -115,6 +119,7 @@ class NewConversationViewModel(
                             model = st.model,
                             userName = userName,
                             sampling = sampling,
+                            summary = st.summary,
                             title = title.ifEmpty { existing.title },
                             updatedAt = System.currentTimeMillis(),
                         ),
