@@ -15,6 +15,7 @@ import okhttp3.Response
 import okhttp3.sse.EventSource
 import okhttp3.sse.EventSourceListener
 import okhttp3.sse.EventSources
+import android.util.Log
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
@@ -77,33 +78,37 @@ class LlamaClient {
                     .get()
                     .build()
                 client.newCall(request).execute().use { resp ->
-                    if (!resp.isSuccessful) {
-                        error("Server returned HTTP ${resp.code}")
-                    }
                     val body = resp.body?.string().orEmpty()
+                    if (!resp.isSuccessful) {
+                        error("HTTP ${resp.code}: ${body.take(500)}")
+                    }
                     json.decodeFromString<PropsResponse>(body).contextSize
                         ?: error("Server did not report n_ctx")
                 }
-            }
+            }.onFailure { Log.w("LlamaClient", "fetchContextSize failed: ${it.message}") }
         }
 
     /** Count the tokens in [content] using the server's own tokenizer (`/tokenize`),
-     *  so the context readout is exact for the loaded model. Fails quietly. */
+     *  so the context readout is exact for the loaded model. Fails quietly (the error
+     *  is logged with the server's response body so a rejection is diagnosable). */
     suspend fun countTokens(ip: String, port: String, content: String): Result<Int> =
         withContext(Dispatchers.IO) {
+            // Empty content has nothing to tokenize; skip the round-trip (and avoid
+            // sending a body some server builds reject) and report zero.
+            if (content.isBlank()) return@withContext Result.success(0)
             runCatching {
                 val request = Request.Builder()
                     .url("${base(ip, port)}/tokenize")
                     .post(json.encodeToString(TokenizeRequest(content)).toRequestBody(jsonMedia))
                     .build()
                 client.newCall(request).execute().use { resp ->
-                    if (!resp.isSuccessful) {
-                        error("Server returned HTTP ${resp.code}")
-                    }
                     val body = resp.body?.string().orEmpty()
+                    if (!resp.isSuccessful) {
+                        error("HTTP ${resp.code}: ${body.take(500)}")
+                    }
                     json.decodeFromString<TokenizeResponse>(body).tokens.size
                 }
-            }
+            }.onFailure { Log.w("LlamaClient", "countTokens failed: ${it.message}") }
         }
 
     /**
