@@ -343,16 +343,28 @@ private fun MessageItem(
 private fun MessageBubble(text: String, isUser: Boolean, streamingCaret: Boolean, onTap: () -> Unit) {
     val shape = if (isUser) RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp) else RoundedCornerShape(0.dp)
     val bg = if (isUser) DcColors.PrimaryContainer else Color.Transparent
+    // Only assistant replies carry <think> reasoning; user text is shown verbatim.
+    val parsed = remember(text, isUser) {
+        if (isUser) ThinkParts(hasThink = false, reasoning = "", answer = text, streaming = false)
+        else parseThink(text)
+    }
     Column(
         modifier = Modifier
             .background(bg, shape)
             .clickable(onClick = onTap)
             .padding(if (isUser) PaddingUser else PaddingAssistant),
     ) {
-        if (text.isNotEmpty()) {
-            MarkdownText(text)
+        if (parsed.hasThink) {
+            // Pulse only while this (last) message is actively streaming its think block;
+            // a run that stopped mid-thought shows a static, still-expandable header.
+            ThinkingSection(parsed.reasoning, animating = parsed.streaming && streamingCaret)
         }
-        if (streamingCaret) {
+        if (parsed.answer.isNotEmpty()) {
+            MarkdownText(parsed.answer)
+        }
+        // The pulsing "Thinking…" label already signals activity during the think
+        // phase, so only show the caret once the answer is streaming.
+        if (streamingCaret && !parsed.streaming) {
             BlinkingCaret()
         }
     }
