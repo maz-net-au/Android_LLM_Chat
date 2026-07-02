@@ -180,10 +180,11 @@ class ChatViewModel(
         usageJob = viewModelScope.launch {
             val conv = repo.get(convId) ?: return@launch
             val s = app.settingsRepository.current()
+            val model = conv.model.ifEmpty { s.currentModel }
             val limit = usage.value.limit
-                ?: app.llamaClient.fetchContextSize(s.ip, s.port).getOrNull()
+                ?: app.llamaClient.fetchContextSize(s.ip, s.port, model).getOrNull()
             val tokens = app.llamaClient
-                .countTokens(s.ip, s.port, ChatRequestBuilder.transcriptForCount(conv), conv.model.ifEmpty { s.currentModel })
+                .countTokens(s.ip, s.port, ChatRequestBuilder.transcriptForCount(conv), model)
                 .getOrNull()
             usage.update { it.copy(tokens = tokens ?: it.tokens, limit = limit ?: it.limit) }
         }

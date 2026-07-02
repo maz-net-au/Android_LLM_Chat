@@ -250,14 +250,16 @@ private fun ContextMeter(tokenCount: Int?, contextLimit: Int?) {
     // Nothing measured yet (fresh chat, or the server hasn't answered) — stay hidden
     // rather than show a placeholder zero.
     if (tokenCount == null) return
-    val fraction = contextLimit?.takeIf { it > 0 }?.let { tokenCount.toFloat() / it }
+    // A non-positive limit means "unknown" — show just the count, no "/ 0" or bogus %.
+    val limit = contextLimit?.takeIf { it > 0 }
+    val fraction = limit?.let { tokenCount.toFloat() / it }
     val warn = fraction != null && fraction >= 0.9f
     val color = if (warn) DcColors.Error else DcColors.OnSurfaceFaint
     val label = buildString {
         append(formatTokens(tokenCount))
-        if (contextLimit != null) {
+        if (limit != null) {
             append(" / ")
-            append(formatTokens(contextLimit))
+            append(formatTokens(limit))
         }
         append(" tokens")
         if (fraction != null) append(" · ${(fraction * 100).roundToInt()}%")

@@ -17,6 +17,7 @@ import okhttp3.sse.EventSourceListener
 import okhttp3.sse.EventSources
 import android.util.Log
 import java.io.IOException
+import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
 /**
@@ -68,13 +69,19 @@ class LlamaClient {
         }
 
     /** Fetch the server's context window size (`n_ctx`) from `/props`, used to show
-     *  how full the current conversation is. Fails quietly (caller treats a failure
+     *  how full the current conversation is. [model] is appended as `?model=` so a
+     *  multi-model router (e.g. llama-swap) proxies to the right backend — without it
+     *  the router reports its own `n_ctx: 0`. Fails quietly (caller treats a failure
      *  as "limit unknown" and just omits the percentage). */
-    suspend fun fetchContextSize(ip: String, port: String): Result<Int> =
+    suspend fun fetchContextSize(ip: String, port: String, model: String): Result<Int> =
         withContext(Dispatchers.IO) {
             runCatching {
+                val url = "${base(ip, port)}/props".let {
+                    if (model.isEmpty()) it
+                    else "$it?model=${URLEncoder.encode(model, "UTF-8")}"
+                }
                 val request = Request.Builder()
-                    .url("${base(ip, port)}/props")
+                    .url(url)
                     .get()
                     .build()
                 client.newCall(request).execute().use { resp ->
@@ -82,8 +89,12 @@ class LlamaClient {
                     if (!resp.isSuccessful) {
                         error("HTTP ${resp.code}: ${body.take(500)}")
                     }
-                    json.decodeFromString<PropsResponse>(body).contextSize
-                        ?: error("Server did not report n_ctx")
+                    // A non-positive n_ctx means the router didn't report a usable
+                    // window (e.g. no model loaded, or props scoped to a different
+                    // backend). Log the body so the actual shape is diagnosable, and
+                    // treat it as "unknown" rather than a bogus 0.
+                    json.decodeFromString<PropsResponse>(body).contextSize?.takeIf { it > 0 }
+                        ?: error("no usable n_ctx in /props: ${body.take(500)}")
                 }
             }.onFailure { Log.w("LlamaClient", "fetchContextSize failed: ${it.message}") }
         }
