@@ -48,9 +48,11 @@ class AttachmentStore(private val context: Context) {
         runCatching {
             val resolver = context.contentResolver
             // Pass 1: bounds only, to pick a power-of-two subsample for the real decode.
+            // decodeStream always returns null in bounds-only mode; success shows up
+            // in outWidth/outHeight instead.
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-                ?: return@runCatching null
+            (resolver.openInputStream(uri) ?: return@runCatching null)
+                .use { BitmapFactory.decodeStream(it, null, bounds) }
             if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
             var sample = 1
             while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= MAX_DIMENSION_PX) {
