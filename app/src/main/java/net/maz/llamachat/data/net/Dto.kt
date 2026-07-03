@@ -2,6 +2,9 @@ package net.maz.llamachat.data.net
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 
 /**
  * Wire DTOs for llama-server's OpenAI-compatible API. The sampler fields beyond
@@ -33,10 +36,53 @@ data class ChatRequest(
     @SerialName("mirostat_eta") val mirostatEta: Double? = null,
 )
 
+/**
+ * OpenAI-compatible message. [content] is either a plain JSON string (text-only —
+ * the wire format is byte-identical to the old `content: String`) or an array of
+ * typed parts for multimodal turns. The DTO is encode-only, so a [JsonElement]
+ * beats polymorphic-serializer machinery. Build via [apiText] / [apiParts].
+ */
 @Serializable
 data class ApiMessage(
     val role: String,
-    val content: String,
+    val content: JsonElement,
+)
+
+/** Text-only message: `content` encodes as a plain JSON string. */
+fun apiText(role: String, text: String): ApiMessage = ApiMessage(role, JsonPrimitive(text))
+
+/** Multimodal message: `content` encodes as an array of typed parts. */
+fun apiParts(role: String, parts: List<JsonElement>): ApiMessage =
+    ApiMessage(role, buildJsonArray { parts.forEach { add(it) } })
+
+@Serializable
+data class TextPart(
+    val type: String = "text",
+    val text: String,
+)
+
+@Serializable
+data class ImageUrl(val url: String)
+
+/** Image content part; [imageUrl].url carries a `data:<mime>;base64,…` URI. */
+@Serializable
+data class ImageUrlPart(
+    val type: String = "image_url",
+    @SerialName("image_url") val imageUrl: ImageUrl,
+)
+
+@Serializable
+data class InputAudio(
+    /** Base64 of the file bytes (no data-URI prefix). */
+    val data: String,
+    /** "wav" or "mp3" — the only formats llama-server accepts. */
+    val format: String,
+)
+
+@Serializable
+data class InputAudioPart(
+    val type: String = "input_audio",
+    @SerialName("input_audio") val inputAudio: InputAudio,
 )
 
 /** A streamed chunk: choices[].delta.content carries the incremental text. */

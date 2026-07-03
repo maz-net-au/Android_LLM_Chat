@@ -35,7 +35,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Compress
@@ -44,7 +43,6 @@ import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.FileDownload
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -53,8 +51,6 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
@@ -81,7 +77,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import net.maz.llamachat.data.model.Catalog
 import net.maz.llamachat.data.model.ChatMessage
 import net.maz.llamachat.data.model.Role
+import net.maz.llamachat.ui.components.AppBarMenuItem
 import net.maz.llamachat.ui.components.Avatar
+import net.maz.llamachat.ui.components.DcAppBar
 import net.maz.llamachat.ui.components.MarkdownText
 import net.maz.llamachat.ui.theme.DcColors
 import net.maz.llamachat.vm.ChatViewModel
@@ -92,6 +90,7 @@ fun ChatScreen(
     vm: ChatViewModel,
     onBack: () -> Unit,
     onEditDetails: (Long) -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val state by vm.ui.collectAsStateWithLifecycle()
     val conv = state.conversation
@@ -143,23 +142,34 @@ fun ChatScreen(
     }
 
     Column(Modifier.fillMaxSize().background(DcColors.Surface)) {
-        ChatAppBar(
-            characterName = character?.name ?: "",
-            characterColor = character?.color ?: DcColors.Primary,
-            modelShort = Catalog.shortModel(conv?.model ?: ""),
-            menuOpen = state.chatMenuOpen,
+        DcAppBar(
             onBack = onBack,
-            onToggleMenu = vm::toggleChatMenu,
-            onDismissMenu = vm::closeChatMenu,
-            onEditDetails = { conv?.let { onEditDetails(it.id) } },
-            onRegenerate = vm::regenerate,
-            onClear = vm::clearMessages,
-            onDelete = vm::deleteConversation,
-            canSummarize = state.canSummarize,
-            onSummarize = vm::summarize,
-            onExport = {
-                vm.closeChatMenu()
-                exportLauncher.launch("${(conv?.title ?: "conversation").ifBlank { "conversation" }}.json")
+            onOpenSettings = onOpenSettings,
+            titleContent = {
+                Avatar(
+                    initial = character?.name ?: "",
+                    color = character?.color ?: DcColors.Primary,
+                    size = 34.dp,
+                    fontSize = 15.sp,
+                    bordered = true,
+                    modifier = Modifier.padding(start = 4.dp, end = 12.dp),
+                )
+                Column(Modifier.weight(1f)) {
+                    Text(character?.name ?: "", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(Catalog.shortModel(conv?.model ?: ""), color = Color.White.copy(alpha = 0.75f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            },
+            menuItems = buildList {
+                add(AppBarMenuItem(Icons.Filled.EditNote, "Edit chat details", DcColors.OnSurfaceVariant, DcColors.OnSurface) { conv?.let { onEditDetails(it.id) } })
+                if (state.canSummarize) {
+                    add(AppBarMenuItem(Icons.Filled.Compress, "Summarize & continue", DcColors.OnSurfaceVariant, DcColors.OnSurface, vm::summarize))
+                }
+                add(AppBarMenuItem(Icons.Filled.Refresh, "Regenerate reply", DcColors.OnSurfaceVariant, DcColors.OnSurface, vm::regenerate))
+                add(AppBarMenuItem(Icons.Filled.FileDownload, "Export conversation", DcColors.OnSurfaceVariant, DcColors.OnSurface) {
+                    exportLauncher.launch("${(conv?.title ?: "conversation").ifBlank { "conversation" }}.json")
+                })
+                add(AppBarMenuItem(Icons.Filled.DeleteSweep, "Clear messages", DcColors.OnSurfaceVariant, DcColors.OnSurface, vm::clearMessages))
+                add(AppBarMenuItem(Icons.Filled.Delete, "Delete conversation", DcColors.Error, DcColors.Error, vm::deleteConversation))
             },
         )
 
@@ -335,68 +345,6 @@ private fun SummarizingBanner(progress: String, onCancel: () -> Unit) {
         }
         TextActionButton("Cancel", DcColors.OnSurfaceVariant, onCancel)
     }
-}
-
-@Composable
-private fun ChatAppBar(
-    characterName: String,
-    characterColor: Color,
-    modelShort: String,
-    menuOpen: Boolean,
-    onBack: () -> Unit,
-    onToggleMenu: () -> Unit,
-    onDismissMenu: () -> Unit,
-    onEditDetails: () -> Unit,
-    onRegenerate: () -> Unit,
-    onClear: () -> Unit,
-    onDelete: () -> Unit,
-    canSummarize: Boolean,
-    onSummarize: () -> Unit,
-    onExport: () -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().background(DcColors.Primary).height(56.dp).padding(horizontal = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(onClick = onBack) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White, modifier = Modifier.size(24.dp))
-        }
-        Avatar(initial = characterName, color = characterColor, size = 34.dp, fontSize = 15.sp, bordered = true, modifier = Modifier.padding(start = 4.dp, end = 12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(characterName, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(modelShort, color = Color.White.copy(alpha = 0.75f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        Box {
-            IconButton(onClick = onToggleMenu) {
-                Icon(Icons.Filled.MoreVert, contentDescription = "More", tint = Color.White, modifier = Modifier.size(22.dp))
-            }
-            DropdownMenu(expanded = menuOpen, onDismissRequest = onDismissMenu) {
-                ChatMenuItem(Icons.Filled.EditNote, "Edit chat details", DcColors.OnSurfaceVariant, DcColors.OnSurface, onEditDetails)
-                if (canSummarize) {
-                    ChatMenuItem(Icons.Filled.Compress, "Summarize & continue", DcColors.OnSurfaceVariant, DcColors.OnSurface, onSummarize)
-                }
-                ChatMenuItem(Icons.Filled.Refresh, "Regenerate reply", DcColors.OnSurfaceVariant, DcColors.OnSurface, onRegenerate)
-                ChatMenuItem(Icons.Filled.FileDownload, "Export conversation", DcColors.OnSurfaceVariant, DcColors.OnSurface, onExport)
-                ChatMenuItem(Icons.Filled.DeleteSweep, "Clear messages", DcColors.OnSurfaceVariant, DcColors.OnSurface, onClear)
-                ChatMenuItem(Icons.Filled.Delete, "Delete conversation", DcColors.Error, DcColors.Error, onDelete)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ChatMenuItem(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    iconTint: Color,
-    textColor: Color,
-    onClick: () -> Unit,
-) {
-    DropdownMenuItem(
-        text = { Text(label, fontSize = 14.sp, color = textColor) },
-        leadingIcon = { Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(19.dp)) },
-        onClick = onClick,
-    )
 }
 
 /**

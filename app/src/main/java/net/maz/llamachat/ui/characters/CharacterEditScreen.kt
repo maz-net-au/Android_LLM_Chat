@@ -22,7 +22,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -47,6 +46,7 @@ import androidx.compose.ui.unit.sp
 import net.maz.llamachat.data.model.Catalog
 import net.maz.llamachat.ui.components.DcTextField
 import net.maz.llamachat.ui.theme.DcColors
+import net.maz.llamachat.ui.components.DcAppBar
 import net.maz.llamachat.vm.CharacterViewModel
 
 /**
@@ -60,6 +60,7 @@ fun CharacterEditScreen(
     editName: String?,
     onBack: () -> Unit,
     onSaved: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val existing = remember(editName) { editName?.let { vm.get(it) } }
 
@@ -73,21 +74,11 @@ fun CharacterEditScreen(
     val canSave = name.isNotBlank()
 
     Column(Modifier.fillMaxSize().background(DcColors.Surface)) {
-        Row(
-            modifier = Modifier.fillMaxWidth().background(DcColors.Primary).height(56.dp).padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White, modifier = Modifier.size(24.dp))
-            }
-            Spacer(Modifier.width(4.dp))
-            Text(
-                if (editName == null) "New character" else "Edit character",
-                color = Color.White,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Medium,
-            )
-        }
+        DcAppBar(
+            title = if (editName == null) "New character" else "Edit character",
+            onBack = onBack,
+            onOpenSettings = onOpenSettings,
+        )
 
         Column(
             modifier = Modifier

@@ -87,7 +87,12 @@ data class BackupConversation(
             userName = c.userName,
             sampling = c.sampling,
             summary = c.summary,
-            messages = c.messages,
+            // Backups are text-only: the attachment bytes live in app-private files
+            // and don't travel, so strip the metadata too rather than export
+            // references that could never resolve on import.
+            messages = c.messages.map {
+                if (it.attachments.isEmpty()) it else it.copy(attachments = emptyList())
+            },
         )
     }
 }

@@ -9,7 +9,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import net.maz.llamachat.LlamaChatApp
-import net.maz.llamachat.ServerSession
 import net.maz.llamachat.data.ConversationRepository
 import net.maz.llamachat.data.IdGen
 import net.maz.llamachat.data.SettingsRepository
@@ -19,6 +18,7 @@ import net.maz.llamachat.data.model.Conversation
 import net.maz.llamachat.data.model.SamplingParam
 import net.maz.llamachat.data.model.samplingOverridesFrom
 import net.maz.llamachat.data.model.samplingTextFrom
+import net.maz.llamachat.data.net.ServerHealthMonitor
 
 enum class NewMenu { NONE, CHARACTER, PRESET }
 
@@ -42,7 +42,7 @@ data class NewConvUiState(
 class NewConversationViewModel(
     private val settings: SettingsRepository,
     private val repo: ConversationRepository,
-    private val session: ServerSession,
+    private val health: ServerHealthMonitor,
     private val editConvId: Long?,
 ) : ViewModel() {
 
@@ -160,7 +160,7 @@ class NewConversationViewModel(
     val characters get() = Catalog.characters
     val presets get() = Catalog.presets
     /** Models the server reported, falling back to the built-in list when offline. */
-    val models: List<String> get() = session.models.value.ifEmpty { Catalog.fallbackModels }
+    val models: List<String> get() = health.state.value.models.ifEmpty { Catalog.fallbackModels }
     fun modelLabel(): String = Catalog.shortModel(_state.value.model)
 
     companion object {
@@ -168,7 +168,7 @@ class NewConversationViewModel(
             initializer {
                 NewConversationViewModel(
                     app.settingsRepository, app.conversationRepository,
-                    app.session, editConvId,
+                    app.healthMonitor, editConvId,
                 )
             }
         }

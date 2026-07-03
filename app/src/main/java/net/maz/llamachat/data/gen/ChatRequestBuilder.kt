@@ -1,10 +1,17 @@
 package net.maz.llamachat.data.gen
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.encodeToJsonElement
 import net.maz.llamachat.data.SettingsRepository
+import net.maz.llamachat.data.model.ChatMessage
 import net.maz.llamachat.data.model.Conversation
 import net.maz.llamachat.data.model.Role
 import net.maz.llamachat.data.net.ApiMessage
 import net.maz.llamachat.data.net.ChatRequest
+import net.maz.llamachat.data.net.TextPart
+import net.maz.llamachat.data.net.apiParts
+import net.maz.llamachat.data.net.apiText
 
 /**
  * Builds the llama-server chat requests for both the assistant [reply] path (used
@@ -15,25 +22,34 @@ import net.maz.llamachat.data.net.ChatRequest
  */
 object ChatRequestBuilder {
 
-    /** Request for generating (or continuing) the assistant message at [assistantIndex]. */
+    /** No-attachment default so text-only callers (and tests) stay unchanged. */
+    val NO_ATTACHMENTS: (ChatMessage) -> List<JsonElement> = { emptyList() }
+
+    /**
+     * Request for generating (or continuing) the assistant message at [assistantIndex].
+     * [attachmentPart] resolves a message's attachments to OpenAI content parts
+     * (a lambda so this object stays free of Context/file dependencies); it's applied
+     * to every unlocked history message — llama-server supports multimodal history.
+     */
     fun reply(
         conv: Conversation,
         assistantIndex: Int,
         includePartial: Boolean,
         forceContinue: Boolean,
         s: SettingsRepository.Settings,
+        attachmentPart: (ChatMessage) -> List<JsonElement> = NO_ATTACHMENTS,
     ): ChatRequest {
         val out = ArrayList<ApiMessage>()
         systemMessage(conv)?.let { out += it }
         conv.messages.forEachIndexed { i, m ->
             // Locked messages are represented by the summary in [systemMessage], not resent.
-            if (i < assistantIndex && !m.locked) out += apiMessage(m.role, m.text)
+            if (i < assistantIndex && !m.locked) out += apiMessage(m, attachmentPart)
         }
         if (includePartial) {
             // Sent verbatim, including any trailing space, so the model continues from
             // exactly where the text left off rather than fusing onto the last word.
             val partial = conv.messages.getOrNull(assistantIndex)?.text.orEmpty()
-            if (partial.isNotBlank()) out += ApiMessage("assistant", partial)
+            if (partial.isNotBlank()) out += apiText("assistant", partial)
         }
         return request(
             conv = conv,
@@ -54,7 +70,11 @@ object ChatRequestBuilder {
      * meaningful in transcript mode (a character with name prefixes); the streamed
      * text goes into the input box for the user to send as their own turn.
      */
-    fun impersonate(conv: Conversation, s: SettingsRepository.Settings): ChatRequest {
+    fun impersonate(
+        conv: Conversation,
+        s: SettingsRepository.Settings,
+        attachmentPart: (ChatMessage) -> List<JsonElement> = NO_ATTACHMENTS,
+    ): ChatRequest {
         val out = ArrayList<ApiMessage>()
         systemMessage(conv)?.let { out += it }
         val last = conv.messages.lastIndex
@@ -65,9 +85,9 @@ object ChatRequestBuilder {
                 // lone space token makes the model predict end-of-turn immediately
                 // (an instant EOS). Without it the next token starts a fresh word and
                 // generation proceeds; the VM trims the leading space off the stream.
-                out += ApiMessage("assistant", m.text.trimEnd() + "\n${conv.userName}:")
+                out += apiText("assistant", m.text.trimEnd() + "\n${conv.userName}:")
             } else {
-                out += apiMessage(m.role, m.text)
+                out += apiMessage(m, attachmentPart)
             }
         }
         return request(conv, out, s, maxTokens = 1000)
@@ -79,6 +99,8 @@ object ChatRequestBuilder {
      * stored text. This mirrors the content [reply] would send (minus the chat
      * template's per-message role framing, which the server adds), so the readout
      * reflects the reduced context once older messages have been summarized.
+     * Text only: image/audio attachments also consume context but /tokenize can't
+     * measure them, so the context meter undercounts for multimodal chats.
      */
     fun transcriptForCount(conv: Conversation): String = buildString {
         systemContent(conv).takeIf { it.isNotBlank() }?.let { appendLine(it) }
@@ -105,8 +127,8 @@ object ChatRequestBuilder {
             append(SummarizationConfig.FOLD_INSTRUCTION)
         }
         val messages = listOf(
-            ApiMessage("system", SummarizationConfig.systemPrompt(conv.character.usesNamePrefixes)),
-            ApiMessage("user", userTurn),
+            apiText("system", SummarizationConfig.systemPrompt(conv.character.usesNamePrefixes)),
+            apiText("user", userTurn),
         )
         val preset = SummarizationConfig.sampling
         return ChatRequest(
@@ -131,10 +153,19 @@ object ChatRequestBuilder {
     }
 
     private fun systemMessage(conv: Conversation): ApiMessage? =
-        systemContent(conv).takeIf { it.isNotBlank() }?.let { ApiMessage("system", it) }
+        systemContent(conv).takeIf { it.isNotBlank() }?.let { apiText("system", it) }
 
-    private fun apiMessage(role: Role, text: String): ApiMessage =
-        ApiMessage(if (role == Role.USER) "user" else "assistant", text)
+    /** Text-only messages keep the plain-string content (wire format unchanged);
+     *  attachments switch the message to a content-parts array: media first, then
+     *  the text part when non-blank. */
+    private fun apiMessage(m: ChatMessage, attachmentPart: (ChatMessage) -> List<JsonElement>): ApiMessage {
+        val role = if (m.role == Role.USER) "user" else "assistant"
+        val media = if (m.attachments.isEmpty()) emptyList() else attachmentPart(m)
+        if (media.isEmpty()) return apiText(role, m.text)
+        val textPart = m.text.takeIf { it.isNotBlank() }
+            ?.let { Json.encodeToJsonElement(TextPart(text = it)) }
+        return apiParts(role, media + listOfNotNull(textPart))
+    }
 
     private fun request(
         conv: Conversation,

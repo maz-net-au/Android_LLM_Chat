@@ -16,8 +16,11 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import net.maz.llamachat.ui.LlamaChatNavHost
+import net.maz.llamachat.ui.components.LocalServerHealth
 import net.maz.llamachat.ui.theme.DcColors
 import net.maz.llamachat.ui.theme.LlamaChatTheme
 
@@ -48,6 +51,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun App() {
+    val app = LocalContext.current.applicationContext as LlamaChatApp
     LlamaChatTheme {
         // On a phone the app fills the screen (the prototype's 412×880 frame is
         // just its design canvas). safeDrawing pads the union of the system bars
@@ -59,7 +63,9 @@ private fun App() {
                     .fillMaxSize()
                     .windowInsetsPadding(WindowInsets.safeDrawing),
             ) {
-                LlamaChatNavHost()
+                CompositionLocalProvider(LocalServerHealth provides app.healthMonitor.state) {
+                    LlamaChatNavHost()
+                }
             }
         }
     }

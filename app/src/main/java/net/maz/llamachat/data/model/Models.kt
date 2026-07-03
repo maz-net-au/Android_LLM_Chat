@@ -5,6 +5,32 @@ import kotlinx.serialization.Serializable
 enum class Role { USER, ASSISTANT }
 
 /**
+ * A media file attached to a message. The bytes live in app-private storage
+ * (see AttachmentStore) under `attachments/<convId>/<fileName>`; only this
+ * metadata is serialized with the message. Backups stay text-only: attachments
+ * are stripped on export.
+ *
+ * ⚠️ Serialized into the Room blob via [ChatMessage] — same compatibility rules:
+ * add fields only with defaults; never rename/remove/retype. [kind] is a plain
+ * string ("image" | "audio") rather than an enum so unknown future kinds still
+ * decode.
+ */
+@Serializable
+data class Attachment(
+    val id: Long,
+    val kind: String,
+    val fileName: String,
+    val mimeType: String = "",
+    /** Audio only; 0 = unknown. */
+    val durationMs: Long = 0L,
+) {
+    companion object {
+        const val KIND_IMAGE = "image"
+        const val KIND_AUDIO = "audio"
+    }
+}
+
+/**
  * A single message. Assistant messages can carry multiple [variants] (one per
  * "regenerate"); user messages always have exactly one. [activeVariant] selects
  * which variant is currently shown.
@@ -25,6 +51,8 @@ data class ChatMessage(
      *  but no longer editable/deletable and no longer sent to the model (the summary
      *  stands in for it). Older messages are always locked as a prefix. */
     val locked: Boolean = false,
+    /** Media sent with this message (images/audio). Default keeps old blobs decoding. */
+    val attachments: List<Attachment> = emptyList(),
 ) {
     val text: String get() = variants.getOrElse(activeVariant) { "" }
     val variantCount: Int get() = variants.size
@@ -39,7 +67,8 @@ data class ChatMessage(
         copy(variants = variants + initial, activeVariant = variants.size)
 
     companion object {
-        fun user(id: Long, text: String) = ChatMessage(id, Role.USER, listOf(text), 0)
+        fun user(id: Long, text: String, attachments: List<Attachment> = emptyList()) =
+            ChatMessage(id, Role.USER, listOf(text), 0, attachments = attachments)
         fun assistant(id: Long, text: String = "") = ChatMessage(id, Role.ASSISTANT, listOf(text), 0)
     }
 }

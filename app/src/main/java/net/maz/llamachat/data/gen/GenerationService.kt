@@ -119,7 +119,10 @@ class GenerationService : Service() {
         // The transcript "Name:" prefill isn't real content; strip it to tell a
         // genuinely empty reply (model emitted nothing) from a real one.
         val prefix = if (conv.character.usesNamePrefixes) "${conv.characterName}: " else ""
-        val request = ChatRequestBuilder.reply(conv, idx, includePartial, forceContinue, s)
+        val store = app.attachmentStore
+        val request = ChatRequestBuilder.reply(conv, idx, includePartial, forceContinue, s) { m ->
+            m.attachments.mapNotNull { store.toContentPart(convId, it) }
+        }
 
         val token = controller.begin(convId, targetId, base)
         try {

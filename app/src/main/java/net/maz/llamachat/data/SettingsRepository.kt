@@ -18,6 +18,7 @@ class SettingsRepository(private val context: Context) {
     private object Keys {
         val IP = stringPreferencesKey("server_ip")
         val PORT = stringPreferencesKey("server_port")
+        val COMFY_PORT = stringPreferencesKey("comfy_port")
         val CURRENT_MODEL = stringPreferencesKey("current_model")
         val CURRENT_PRESET = stringPreferencesKey("current_preset")
         val USER_NAME = stringPreferencesKey("user_name")
@@ -27,6 +28,8 @@ class SettingsRepository(private val context: Context) {
     data class Settings(
         val ip: String,
         val port: String,
+        /** ComfyUI port on the same host; llama-server uses [port]. */
+        val comfyPort: String,
         val currentModel: String,
         /** Last selected preset; the default for new conversations. */
         val currentPreset: String,
@@ -38,6 +41,7 @@ class SettingsRepository(private val context: Context) {
         Settings(
             ip = prefs[Keys.IP] ?: "192.168.1.42",
             port = prefs[Keys.PORT] ?: "8080",
+            comfyPort = prefs[Keys.COMFY_PORT] ?: "8188",
             currentModel = prefs[Keys.CURRENT_MODEL] ?: Catalog.fallbackModels.first(),
             currentPreset = prefs[Keys.CURRENT_PRESET] ?: Catalog.presets.first().name,
             userName = prefs[Keys.USER_NAME]?.takeIf { it.isNotBlank() } ?: "user",
@@ -46,10 +50,11 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun current(): Settings = settings.first()
 
-    suspend fun saveServer(ip: String, port: String) {
+    suspend fun saveServer(ip: String, llamaPort: String, comfyPort: String) {
         context.dataStore.edit {
             it[Keys.IP] = ip
-            it[Keys.PORT] = port
+            it[Keys.PORT] = llamaPort
+            it[Keys.COMFY_PORT] = comfyPort
         }
     }
 

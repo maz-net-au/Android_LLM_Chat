@@ -42,7 +42,6 @@ data class ChatUiState(
     val editText: String = "",
     /** Speaker prefix stripped from the message being edited, re-applied on save. */
     val editPrefix: String = "",
-    val chatMenuOpen: Boolean = false,
     /** True once the conversation has been deleted — the screen pops to Home. */
     val closed: Boolean = false,
     /** True while a summarization is streaming for this chat. */
@@ -88,7 +87,6 @@ class ChatViewModel(
         val editingMsgId: Long? = null,
         val editText: String = "",
         val editPrefix: String = "",
-        val chatMenuOpen: Boolean = false,
         val closed: Boolean = false,
         val summarizeDoneId: Long? = null,
     )
@@ -127,7 +125,6 @@ class ChatViewModel(
                 editingMsgId = l.editingMsgId,
                 editText = l.editText,
                 editPrefix = l.editPrefix,
-                chatMenuOpen = l.chatMenuOpen,
                 closed = l.closed,
                 summarizing = summarizing,
                 summaryProgress = if (summarizing) sum!!.text else "",
@@ -159,7 +156,7 @@ class ChatViewModel(
                 if (st == null || st.convId != convId) return@collect
                 when (st.phase) {
                     SummaryPhase.DONE -> {
-                        local.update { it.copy(summarizeDoneId = convId, chatMenuOpen = false) }
+                        local.update { it.copy(summarizeDoneId = convId) }
                         summarizer.clear(convId)
                         refreshUsage()
                     }
@@ -239,7 +236,7 @@ class ChatViewModel(
                 if (it.id == last.id) it.addVariant(if (prefixes) "${conv.characterName}: " else "") else it
             },
         )
-        local.update { it.copy(selectedMsgId = null, chatMenuOpen = false) }
+        local.update { it.copy(selectedMsgId = null) }
         saveThen(updated) {
             GenerationService.start(app, convId, last.id, includePartial = prefixes, forceContinue = false, title = updated.title)
         }
@@ -275,10 +272,12 @@ class ChatViewModel(
     fun impersonate() {
         if (isBusy() || local.value.impersonating) return
         val conv = base ?: return
-        local.update { it.copy(impersonating = true, input = "", selectedMsgId = null, chatMenuOpen = false) }
+        local.update { it.copy(impersonating = true, input = "", selectedMsgId = null) }
         impersonateJob = viewModelScope.launch {
             val s = app.settingsRepository.current()
-            val request = ChatRequestBuilder.impersonate(conv, s)
+            val request = ChatRequestBuilder.impersonate(conv, s) { m ->
+                m.attachments.mapNotNull { app.attachmentStore.toContentPart(convId, it) }
+            }
             val sb = StringBuilder()
             try {
                 app.llamaClient.streamChat(s.ip, s.port, request).collect { delta ->
@@ -396,7 +395,7 @@ class ChatViewModel(
         val conv = base ?: return
         // Clearing wipes the history the summary described, so drop the summary too.
         val updated = conv.copy(updatedAt = System.currentTimeMillis(), messages = emptyList(), summary = "")
-        local.update { it.copy(chatMenuOpen = false, selectedMsgId = null) }
+        local.update { it.copy(selectedMsgId = null) }
         saveThen(updated)
     }
 
@@ -404,7 +403,7 @@ class ChatViewModel(
         GenerationService.cancel(app) // tear down any reply still streaming for this chat
         viewModelScope.launch {
             repo.delete(convId)
-            local.update { it.copy(chatMenuOpen = false, closed = true) }
+            local.update { it.copy(closed = true) }
         }
     }
 
@@ -416,7 +415,7 @@ class ChatViewModel(
         val conv = base ?: return
         if (isBusy() || local.value.impersonating) return
         if (!SummarizationConfig.canSummarize(conv.messages.size)) return
-        local.update { it.copy(chatMenuOpen = false, selectedMsgId = null) }
+        local.update { it.copy(selectedMsgId = null) }
         SummarizationService.start(app, convId, conv.title)
     }
 
@@ -430,8 +429,6 @@ class ChatViewModel(
 
     // ---- chat menu ---------------------------------------------------------
 
-    fun toggleChatMenu() = local.update { it.copy(chatMenuOpen = !it.chatMenuOpen) }
-    fun closeChatMenu() = local.update { it.copy(chatMenuOpen = false) }
 
     // ---- persistence helper ------------------------------------------------
 

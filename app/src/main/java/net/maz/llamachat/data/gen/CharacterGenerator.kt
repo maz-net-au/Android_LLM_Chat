@@ -2,8 +2,8 @@ package net.maz.llamachat.data.gen
 
 import net.maz.llamachat.data.CharacterYaml
 import net.maz.llamachat.data.model.Catalog
-import net.maz.llamachat.data.net.ApiMessage
 import net.maz.llamachat.data.net.ChatRequest
+import net.maz.llamachat.data.net.apiText
 
 /** Seed inputs for a generation. Any field may be blank — the model invents the
  *  rest, so this doubles as the "surprise me" payload when all four are filled in. */
@@ -43,8 +43,8 @@ object CharacterGenerator {
         return ChatRequest(
             model = model,
             messages = listOf(
-                ApiMessage("system", SYSTEM),
-                ApiMessage("user", userPrompt(seed)),
+                apiText("system", SYSTEM),
+                apiText("user", userPrompt(seed)),
             ),
             stream = true,
             maxTokens = 700, // a character sheet is short; bound runaway output

@@ -14,18 +14,20 @@ import net.maz.llamachat.ui.characters.CharacterEditScreen
 import net.maz.llamachat.ui.characters.CharacterListScreen
 import net.maz.llamachat.ui.characters.GeneratorScreen
 import net.maz.llamachat.ui.chat.ChatScreen
-import net.maz.llamachat.ui.connect.ConnectScreen
 import net.maz.llamachat.ui.home.HomeScreen
+import net.maz.llamachat.ui.launcher.LauncherScreen
 import net.maz.llamachat.ui.newconv.NewConversationScreen
+import net.maz.llamachat.ui.settings.SettingsScreen
 import net.maz.llamachat.vm.CharacterViewModel
 import net.maz.llamachat.vm.ChatViewModel
-import net.maz.llamachat.vm.ConnectViewModel
 import net.maz.llamachat.vm.GeneratorViewModel
 import net.maz.llamachat.vm.HomeViewModel
 import net.maz.llamachat.vm.NewConversationViewModel
+import net.maz.llamachat.vm.SettingsViewModel
 
 object Routes {
-    const val CONNECT = "connect"
+    const val LAUNCHER = "launcher"
+    const val SETTINGS = "settings"
     const val HOME = "home"
     const val NEW = "new"
     const val CHAT = "chat"
@@ -42,15 +44,22 @@ object Routes {
 fun LlamaChatNavHost() {
     val navController = rememberNavController()
     val app = LocalContext.current.applicationContext as LlamaChatApp
+    val openSettings: () -> Unit = { navController.navigate(Routes.SETTINGS) }
 
-    NavHost(navController = navController, startDestination = Routes.HOME) {
+    NavHost(navController = navController, startDestination = Routes.LAUNCHER) {
 
-        composable(Routes.CONNECT) {
-            val vm: ConnectViewModel = viewModel(factory = ConnectViewModel.factory(app))
-            ConnectScreen(
+        composable(Routes.LAUNCHER) {
+            LauncherScreen(
+                onOpenChat = { navController.navigate(Routes.HOME) },
+                onOpenSettings = openSettings,
+            )
+        }
+
+        composable(Routes.SETTINGS) {
+            val vm: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(app))
+            SettingsScreen(
                 vm = vm,
-                // Reached from Home (the start screen); return there once connected.
-                onConnected = { navController.popBackStack(Routes.HOME, inclusive = false) },
+                onBack = { navController.popBackStack() },
             )
         }
 
@@ -58,10 +67,11 @@ fun LlamaChatNavHost() {
             val vm: HomeViewModel = viewModel(factory = HomeViewModel.factory(app))
             HomeScreen(
                 vm = vm,
+                onBack = { navController.popBackStack() },
                 onOpenConversation = { id -> navController.navigate(Routes.chat(id)) },
                 onNewConversation = { navController.navigate(Routes.NEW) },
                 onManageCharacters = { navController.navigate(Routes.CHARACTERS) },
-                onOpenServer = { navController.navigate(Routes.CONNECT) },
+                onOpenSettings = openSettings,
             )
         }
 
@@ -80,6 +90,7 @@ fun LlamaChatNavHost() {
                         popUpTo("${Routes.NEW}?convId={convId}") { inclusive = true }
                     }
                 },
+                onOpenSettings = openSettings,
             )
         }
 
@@ -91,6 +102,7 @@ fun LlamaChatNavHost() {
                 onEdit = { name -> navController.navigate(Routes.editCharacter(name)) },
                 onCreate = { navController.navigate(Routes.editCharacter()) },
                 onGenerate = { navController.navigate(Routes.CHARACTER_GENERATE) },
+                onOpenSettings = openSettings,
             )
         }
 
@@ -101,6 +113,7 @@ fun LlamaChatNavHost() {
                 onBack = { navController.popBackStack() },
                 // The saved character lands in the list we came from.
                 onSaved = { navController.popBackStack() },
+                onOpenSettings = openSettings,
             )
         }
 
@@ -115,6 +128,7 @@ fun LlamaChatNavHost() {
                 editName = name,
                 onBack = { navController.popBackStack() },
                 onSaved = { navController.popBackStack() },
+                onOpenSettings = openSettings,
             )
         }
 
@@ -130,6 +144,7 @@ fun LlamaChatNavHost() {
                 onEditDetails = { id ->
                     navController.navigate(Routes.newConv(id))
                 },
+                onOpenSettings = openSettings,
             )
         }
     }

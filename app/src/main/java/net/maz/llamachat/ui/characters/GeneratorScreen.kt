@@ -17,7 +17,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Refresh
@@ -38,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import net.maz.llamachat.ui.components.DcAppBar
 import net.maz.llamachat.ui.components.DcTextField
 import net.maz.llamachat.ui.theme.DcColors
 import net.maz.llamachat.vm.GenPhase
@@ -54,6 +54,7 @@ fun GeneratorScreen(
     vm: GeneratorViewModel,
     onBack: () -> Unit,
     onSaved: (String) -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
 
@@ -65,21 +66,11 @@ fun GeneratorScreen(
     val handleBack = { if (state.phase == GenPhase.REVIEW) vm.editSeeds() else onBack() }
 
     Column(Modifier.fillMaxSize().background(DcColors.Surface)) {
-        Row(
-            modifier = Modifier.fillMaxWidth().background(DcColors.Primary).height(56.dp).padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = handleBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White, modifier = Modifier.size(24.dp))
-            }
-            Spacer(Modifier.width(4.dp))
-            Text(
-                if (state.phase == GenPhase.REVIEW) "Review character" else "Generate a character",
-                color = Color.White,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Medium,
-            )
-        }
+        DcAppBar(
+            title = if (state.phase == GenPhase.REVIEW) "Review character" else "Generate a character",
+            onBack = handleBack,
+            onOpenSettings = onOpenSettings,
+        )
 
         when (state.phase) {
             GenPhase.GENERATING -> GeneratingView()

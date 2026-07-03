@@ -6,7 +6,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import net.maz.llamachat.LlamaChatApp
@@ -14,8 +14,6 @@ import net.maz.llamachat.data.ConversationRepository
 import net.maz.llamachat.data.backup.BackupCodec
 import net.maz.llamachat.data.model.Catalog
 import net.maz.llamachat.data.model.Conversation
-
-enum class ConnStatus { CONNECTED, CONNECTING, OFFLINE }
 
 /** Outcome of a restore, surfaced to the UI as a Toast. */
 sealed interface ImportResult {
@@ -27,7 +25,6 @@ sealed interface ImportResult {
 
 data class HomeUiState(
     val conversations: List<Conversation> = emptyList(),
-    val connection: ConnStatus = ConnStatus.OFFLINE,
 )
 
 class HomeViewModel(
@@ -35,22 +32,10 @@ class HomeViewModel(
     private val repo: ConversationRepository,
 ) : ViewModel() {
 
-    private val session = app.session
-
     val state: StateFlow<HomeUiState> =
-        combine(repo.conversations, session.connected, session.connecting) { convs, connected, connecting ->
-            HomeUiState(
-                conversations = convs,
-                connection = when {
-                    connected -> ConnStatus.CONNECTED
-                    connecting -> ConnStatus.CONNECTING
-                    else -> ConnStatus.OFFLINE
-                },
-            )
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), HomeUiState())
-
-    /** Re-check the saved server when the user returns to this screen. */
-    fun refreshConnection() = app.probeConnection()
+        repo.conversations
+            .map { HomeUiState(conversations = it) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), HomeUiState())
 
     /**
      * Restore a conversation from a backup file's [text]. Best-effort decode; overwrites

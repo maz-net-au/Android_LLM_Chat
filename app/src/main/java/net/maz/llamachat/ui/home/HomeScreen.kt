@@ -19,8 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.FileUpload
@@ -30,14 +28,11 @@ import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -47,19 +42,21 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import net.maz.llamachat.data.RelativeTime
 import net.maz.llamachat.data.model.Conversation
+import net.maz.llamachat.ui.components.AppBarMenuItem
 import net.maz.llamachat.ui.components.Avatar
+import net.maz.llamachat.ui.components.DcAppBar
 import net.maz.llamachat.ui.theme.DcColors
-import net.maz.llamachat.vm.ConnStatus
 import net.maz.llamachat.vm.HomeViewModel
 import net.maz.llamachat.vm.ImportResult
 
 @Composable
 fun HomeScreen(
     vm: HomeViewModel,
+    onBack: () -> Unit,
     onOpenConversation: (Long) -> Unit,
     onNewConversation: () -> Unit,
     onManageCharacters: () -> Unit,
-    onOpenServer: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -88,35 +85,18 @@ fun HomeScreen(
         }
     }
 
-    // Re-probe the saved server each time the conversations screen is shown.
-    LaunchedEffect(Unit) { vm.refreshConnection() }
-
     Column(Modifier.fillMaxSize().background(DcColors.Surface)) {
-        // App bar
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(DcColors.Primary)
-                .height(56.dp)
-                .padding(start = 16.dp, end = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "Conversations",
-                color = Color.White,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Medium,
-                letterSpacing = 0.15.sp,
-                modifier = Modifier.weight(1f),
-            )
-            ConnectionChip(status = state.connection, onClick = onOpenServer)
-            IconButton(onClick = { importLauncher.launch(arrayOf("application/json", "*/*")) }) {
-                Icon(Icons.Filled.FileUpload, contentDescription = "Import conversation", tint = Color.White, modifier = Modifier.size(22.dp))
-            }
-            IconButton(onClick = onManageCharacters) {
-                Icon(Icons.Filled.ManageAccounts, contentDescription = "Characters", tint = Color.White, modifier = Modifier.size(24.dp))
-            }
-        }
+        DcAppBar(
+            title = "Conversations",
+            onBack = onBack,
+            onOpenSettings = onOpenSettings,
+            menuItems = listOf(
+                AppBarMenuItem(Icons.Filled.FileUpload, "Import conversation", DcColors.OnSurfaceVariant, DcColors.OnSurface) {
+                    importLauncher.launch(arrayOf("application/json", "*/*"))
+                },
+                AppBarMenuItem(Icons.Filled.ManageAccounts, "Characters", DcColors.OnSurfaceVariant, DcColors.OnSurface, onManageCharacters),
+            ),
+        )
 
         Box(Modifier.fillMaxSize()) {
             if (state.conversations.isEmpty()) {
@@ -141,27 +121,6 @@ fun HomeScreen(
                 Icon(Icons.Filled.Add, contentDescription = "New conversation", modifier = Modifier.size(28.dp))
             }
         }
-    }
-}
-
-@Composable
-private fun ConnectionChip(status: ConnStatus, onClick: () -> Unit) {
-    val (dot, label) = when (status) {
-        ConnStatus.CONNECTED -> Color(0xFF66BB6A) to "Online"
-        ConnStatus.CONNECTING -> Color(0xFFFFCA28) to "Connecting"
-        ConnStatus.OFFLINE -> Color(0xFFEF5350) to "Offline"
-    }
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(14.dp))
-            .clickable(onClick = onClick)
-            .background(Color.White.copy(alpha = 0.15f))
-            .padding(horizontal = 10.dp, vertical = 5.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
-        Spacer(Modifier.width(6.dp))
-        Text(label, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
     }
 }
 

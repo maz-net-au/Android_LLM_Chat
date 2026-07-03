@@ -20,7 +20,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
@@ -54,6 +53,7 @@ import net.maz.llamachat.data.model.Catalog
 import net.maz.llamachat.data.model.SamplingParam
 import net.maz.llamachat.data.model.formatSampling
 import net.maz.llamachat.ui.components.Avatar
+import net.maz.llamachat.ui.components.DcAppBar
 import net.maz.llamachat.ui.components.DcTextField
 import net.maz.llamachat.ui.theme.DcColors
 import net.maz.llamachat.vm.NewConversationViewModel
@@ -63,6 +63,7 @@ fun NewConversationScreen(
     vm: NewConversationViewModel,
     onBack: () -> Unit,
     onStarted: (Long) -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
 
@@ -71,22 +72,11 @@ fun NewConversationScreen(
     }
 
     Column(Modifier.fillMaxSize().background(DcColors.Surface)) {
-        // App bar
-        Row(
-            modifier = Modifier.fillMaxWidth().background(DcColors.Primary).height(56.dp).padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White, modifier = Modifier.size(24.dp))
-            }
-            Spacer(Modifier.width(4.dp))
-            Text(
-                if (state.editing) "Edit details" else "New conversation",
-                color = Color.White,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Medium,
-            )
-        }
+        DcAppBar(
+            title = if (state.editing) "Edit details" else "New conversation",
+            onBack = onBack,
+            onOpenSettings = onOpenSettings,
+        )
 
         Column(
             modifier = Modifier

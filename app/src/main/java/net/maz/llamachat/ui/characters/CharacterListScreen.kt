@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Delete
@@ -50,7 +49,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import net.maz.llamachat.ui.components.AppBarMenuItem
 import net.maz.llamachat.ui.components.Avatar
+import net.maz.llamachat.ui.components.DcAppBar
 import net.maz.llamachat.ui.theme.DcColors
 import net.maz.llamachat.vm.CharacterViewModel
 
@@ -61,6 +62,7 @@ fun CharacterListScreen(
     onEdit: (String) -> Unit,
     onCreate: () -> Unit,
     onGenerate: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val characters by vm.characters.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -105,22 +107,17 @@ fun CharacterListScreen(
     }
 
     Column(Modifier.fillMaxSize().background(DcColors.Surface)) {
-        Row(
-            modifier = Modifier.fillMaxWidth().background(DcColors.Primary).height(56.dp).padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White, modifier = Modifier.size(24.dp))
-            }
-            Spacer(Modifier.width(4.dp))
-            Text("Characters", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-            IconButton(onClick = onGenerate) {
-                Icon(Icons.Filled.Casino, contentDescription = "Generate a character", tint = Color.White, modifier = Modifier.size(22.dp))
-            }
-            IconButton(onClick = { importLauncher.launch(arrayOf("*/*")) }) {
-                Icon(Icons.Filled.FileUpload, contentDescription = "Import", tint = Color.White, modifier = Modifier.size(22.dp))
-            }
-        }
+        DcAppBar(
+            title = "Characters",
+            onBack = onBack,
+            onOpenSettings = onOpenSettings,
+            menuItems = listOf(
+                AppBarMenuItem(Icons.Filled.Casino, "Generate a character", DcColors.OnSurfaceVariant, DcColors.OnSurface, onGenerate),
+                AppBarMenuItem(Icons.Filled.FileUpload, "Import characters", DcColors.OnSurfaceVariant, DcColors.OnSurface) {
+                    importLauncher.launch(arrayOf("*/*"))
+                },
+            ),
+        )
 
         Box(Modifier.fillMaxSize()) {
             LazyColumn(Modifier.fillMaxSize()) {
