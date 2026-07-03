@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
 import net.maz.llamachat.LlamaChatApp
 import net.maz.llamachat.data.ConversationRepository
 import net.maz.llamachat.data.IdGen
+import net.maz.llamachat.data.attach.WavRecorder
 import net.maz.llamachat.data.backup.BackupCodec
 import net.maz.llamachat.data.gen.ChatRequestBuilder
 import net.maz.llamachat.data.gen.GenerationController
@@ -272,6 +273,50 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.IO) { app.attachmentStore.delete(convId, listOf(old)) }
     }
 
+    // ---- voice messages ------------------------------------------------------
+
+    private val wavRecorder = WavRecorder()
+    private var recordingId: Long? = null
+
+    /** Begin capturing a voice message (mic held). Caller must hold RECORD_AUDIO. */
+    fun startRecording() {
+        if (isBusy() || local.value.impersonating || local.value.recording) return
+        val id = IdGen.next()
+        if (wavRecorder.start(app.attachmentStore.newAudioFile(convId, id))) {
+            recordingId = id
+            local.update { it.copy(recording = true) }
+        }
+    }
+
+    /**
+     * Mic released: finalize the clip and send it immediately as its own message
+     * (audio and text are mutually exclusive). Sub-[MIN_RECORDING_MS] clips are
+     * discarded as accidental taps.
+     */
+    fun stopRecording(cancelled: Boolean = false) {
+        val id = recordingId ?: return
+        recordingId = null
+        val durationMs = wavRecorder.stop()
+        local.update { it.copy(recording = false) }
+        val att = Attachment(id, Attachment.KIND_AUDIO, "$id.wav", "audio/wav", durationMs)
+        if (cancelled || durationMs < MIN_RECORDING_MS) {
+            viewModelScope.launch(Dispatchers.IO) { app.attachmentStore.delete(convId, listOf(att)) }
+            return
+        }
+        sendInternal("", listOf(att))
+    }
+
+    override fun onCleared() {
+        // Screen died mid-hold: stop the hardware and drop the never-sent clip.
+        val id = recordingId
+        recordingId = null
+        wavRecorder.release()
+        if (id != null) {
+            app.attachmentStore.delete(convId, listOf(Attachment(id, Attachment.KIND_AUDIO, "$id.wav")))
+        }
+        super.onCleared()
+    }
+
     private fun deriveTitle(text: String): String =
         if (text.length > 30) text.take(30) + "…" else text
 
@@ -504,6 +549,9 @@ class ChatViewModel(
     }
 
     companion object {
+        /** Clips shorter than this are treated as accidental mic taps and discarded. */
+        private const val MIN_RECORDING_MS = 500L
+
         fun factory(app: LlamaChatApp, convId: Long) = viewModelFactory {
             initializer { ChatViewModel(convId, app) }
         }

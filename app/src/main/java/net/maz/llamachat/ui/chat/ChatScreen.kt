@@ -2,6 +2,7 @@ package net.maz.llamachat.ui.chat
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
 import android.widget.Toast
@@ -16,6 +17,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,7 +50,9 @@ import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PlayArrow
@@ -65,6 +69,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -75,6 +80,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -88,6 +94,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import kotlinx.coroutines.delay
 import net.maz.llamachat.LlamaChatApp
 import net.maz.llamachat.data.model.Attachment
 import net.maz.llamachat.data.model.Catalog
@@ -176,6 +183,23 @@ fun ChatScreen(
             launchCamera()
         } else {
             cameraPermLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    // --- voice recording ------------------------------------------------------
+
+    val audioPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        // Granted mid-press: the user just lifts and holds again to record.
+        if (!granted) Toast.makeText(context, "Microphone access denied", Toast.LENGTH_SHORT).show()
+    }
+
+    fun startRecording() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            vm.startRecording()
+        } else {
+            audioPermLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
 
@@ -327,12 +351,16 @@ fun ChatScreen(
             // only an in-flight reply, impersonation or summarization disables the button.
             sendEnabled = !state.streaming && !state.impersonating && !state.summarizing,
             canAttachImage = state.canAttachImage,
+            canRecordAudio = state.canRecordAudio,
+            recording = state.recording,
             pendingImageFile = state.pendingImage?.let { app.attachmentStore.fileFor(vm.convId, it) },
             onInputChange = vm::setInput,
             onSend = vm::send,
             onPickGallery = ::pickGallery,
             onTakePhoto = ::takePhoto,
             onRemovePendingImage = vm::removePendingImage,
+            onStartRecording = ::startRecording,
+            onStopRecording = { vm.stopRecording() },
         )
     }
 }
@@ -526,6 +554,11 @@ private fun MessageBubble(
                         .heightIn(max = 240.dp)
                         .clip(RoundedCornerShape(12.dp)),
                 )
+                Attachment.KIND_AUDIO -> AudioPill(
+                    file = file,
+                    durationMs = att.durationMs,
+                    modifier = Modifier.padding(bottom = if (parsed.answer.isNotEmpty()) 6.dp else 0.dp),
+                )
             }
         }
         if (parsed.hasThink) {
@@ -546,6 +579,51 @@ private fun MessageBubble(
 
 private val PaddingUser = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp)
 private val PaddingAssistant = androidx.compose.foundation.layout.PaddingValues(vertical = 2.dp)
+
+/** A voice-message bubble: tap to play/stop, with the clip duration. No seek bar —
+ *  clips are short and the model gets the audio either way. */
+@Composable
+private fun AudioPill(file: File, durationMs: Long, modifier: Modifier = Modifier) {
+    var playing by remember { mutableStateOf(false) }
+    val player = remember { MediaPlayer() }
+    DisposableEffect(Unit) {
+        onDispose { player.release() }
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .clip(RoundedCornerShape(18.dp))
+            .background(DcColors.SurfaceTint)
+            .clickable {
+                if (playing) {
+                    runCatching { player.stop() }
+                    playing = false
+                } else {
+                    runCatching {
+                        player.reset()
+                        player.setDataSource(file.path)
+                        player.setOnCompletionListener { playing = false }
+                        player.prepare()
+                        player.start()
+                        playing = true
+                    }
+                }
+            }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        Icon(
+            if (playing) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+            contentDescription = if (playing) "Stop playback" else "Play voice message",
+            tint = DcColors.Primary,
+            modifier = Modifier.size(22.dp),
+        )
+        Spacer(Modifier.width(6.dp))
+        Icon(Icons.Filled.GraphicEq, contentDescription = null, tint = DcColors.OnSurfaceVariant, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        val secs = durationMs / 1_000
+        Text("%d:%02d".format(secs / 60, secs % 60), fontSize = 13.sp, color = DcColors.OnSurface)
+    }
+}
 
 @Composable
 private fun BlinkingCaret() {
@@ -705,12 +783,16 @@ private fun InputBar(
     input: String,
     sendEnabled: Boolean,
     canAttachImage: Boolean,
+    canRecordAudio: Boolean,
+    recording: Boolean,
     pendingImageFile: File?,
     onInputChange: (String) -> Unit,
     onSend: () -> Unit,
     onPickGallery: () -> Unit,
     onTakePhoto: () -> Unit,
     onRemovePendingImage: () -> Unit,
+    onStartRecording: () -> Unit,
+    onStopRecording: () -> Unit,
 ) {
     // Mirror the String input in a TextFieldValue so external updates (impersonation
     // streaming, send-clear, prompt restore) can drop the caret at the end — that's
@@ -737,21 +819,25 @@ private fun InputBar(
             if (pendingImageFile != null) {
                 PendingImagePreview(pendingImageFile, onRemovePendingImage)
             }
-            BasicTextField(
-                value = field,
-                onValueChange = {
-                    field = it
-                    if (it.text != input) onInputChange(it.text)
-                },
-                textStyle = LocalTextStyle.current.copy(fontSize = 15.sp, color = DcColors.OnSurface, lineHeight = 21.sp),
-                cursorBrush = SolidColor(DcColors.Primary),
-                maxLines = 6,
-                modifier = Modifier.fillMaxWidth(),
-                decorationBox = { inner ->
-                    if (field.text.isEmpty()) Text("Message…", color = DcColors.OnSurfaceFaint, fontSize = 15.sp)
-                    inner()
-                },
-            )
+            if (recording) {
+                RecordingIndicator()
+            } else {
+                BasicTextField(
+                    value = field,
+                    onValueChange = {
+                        field = it
+                        if (it.text != input) onInputChange(it.text)
+                    },
+                    textStyle = LocalTextStyle.current.copy(fontSize = 15.sp, color = DcColors.OnSurface, lineHeight = 21.sp),
+                    cursorBrush = SolidColor(DcColors.Primary),
+                    maxLines = 6,
+                    modifier = Modifier.fillMaxWidth(),
+                    decorationBox = { inner ->
+                        if (field.text.isEmpty()) Text("Message…", color = DcColors.OnSurfaceFaint, fontSize = 15.sp)
+                        inner()
+                    },
+                )
+            }
         }
         Spacer(Modifier.width(8.dp))
         Box(
@@ -763,6 +849,84 @@ private fun InputBar(
         ) {
             Icon(Icons.Filled.Send, contentDescription = "Send", tint = Color.White, modifier = Modifier.size(22.dp))
         }
+        // Audio and text are mutually exclusive: the mic hides as soon as text is
+        // typed (or an image is staged), leaving Send as the only affordance.
+        if (canRecordAudio && field.text.isEmpty() && pendingImageFile == null) {
+            Spacer(Modifier.width(8.dp))
+            MicButton(
+                recording = recording,
+                enabled = sendEnabled,
+                onStartRecording = onStartRecording,
+                onStopRecording = onStopRecording,
+            )
+        }
+    }
+}
+
+/** Hold-to-record mic (shown right of Send on audio-capable models). */
+@Composable
+private fun MicButton(
+    recording: Boolean,
+    enabled: Boolean,
+    onStartRecording: () -> Unit,
+    onStopRecording: () -> Unit,
+) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(44.dp)
+            .background(if (recording) DcColors.Error else DcColors.SurfaceTint, CircleShape)
+            .pointerInput(enabled) {
+                detectTapGestures(
+                    onPress = {
+                        if (enabled) {
+                            onStartRecording()
+                            tryAwaitRelease()
+                            onStopRecording()
+                        }
+                    },
+                )
+            },
+    ) {
+        Icon(
+            Icons.Filled.Mic,
+            contentDescription = "Hold to record",
+            tint = if (recording) Color.White else DcColors.Primary,
+            modifier = Modifier.size(22.dp),
+        )
+    }
+}
+
+/** Pulsing dot + elapsed timer shown in place of the text field while recording. */
+@Composable
+private fun RecordingIndicator() {
+    var elapsed by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1_000)
+            elapsed++
+        }
+    }
+    val transition = rememberInfiniteTransition(label = "recording")
+    val alpha by transition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.25f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(600, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "recordingAlpha",
+    )
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Box(
+            Modifier
+                .size(10.dp)
+                .background(DcColors.Error.copy(alpha = alpha), CircleShape),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text("%d:%02d".format(elapsed / 60, elapsed % 60), fontSize = 15.sp, color = DcColors.OnSurface)
+        Spacer(Modifier.width(10.dp))
+        Text("Recording… release to send", fontSize = 13.sp, color = DcColors.OnSurfaceFaint)
     }
 }
 
