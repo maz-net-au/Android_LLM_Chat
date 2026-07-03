@@ -74,6 +74,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -149,8 +150,11 @@ fun ChatScreen(
         }
     }
 
-    // The capture target must survive recomposition between launch and result.
-    var cameraUri by remember { mutableStateOf<Uri?>(null) }
+    // The capture target must survive not just recomposition but activity
+    // recreation — launching the camera app routinely destroys this activity
+    // (orientation, memory), and a plain `remember` would come back null and
+    // silently drop the capture.
+    var cameraUri by rememberSaveable { mutableStateOf<Uri?>(null) }
     val cameraLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.TakePicture(),
     ) { ok ->

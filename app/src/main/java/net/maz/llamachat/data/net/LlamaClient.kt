@@ -159,11 +159,16 @@ class LlamaClient {
             }
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
-                val message = when {
-                    t != null -> t.message ?: t.javaClass.simpleName
-                    response != null -> "HTTP ${response.code}"
-                    else -> "Connection failed"
+                // On a non-2xx the server's body says exactly what it rejected
+                // (e.g. a malformed content part) — surface and log it.
+                val httpError = response?.let { r ->
+                    val body = runCatching { r.body?.string() }.getOrNull().orEmpty().take(500)
+                    "HTTP ${r.code}" + if (body.isBlank()) "" else ": $body"
                 }
+                val message = httpError
+                    ?: t?.let { it.message ?: it.javaClass.simpleName }
+                    ?: "Connection failed"
+                Log.w("LlamaClient", "streamChat failed: $message", t)
                 close(IOException(message))
             }
         }

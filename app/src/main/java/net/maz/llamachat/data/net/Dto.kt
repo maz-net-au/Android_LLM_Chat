@@ -1,5 +1,7 @@
 package net.maz.llamachat.data.net
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -55,9 +57,14 @@ fun apiText(role: String, text: String): ApiMessage = ApiMessage(role, JsonPrimi
 fun apiParts(role: String, parts: List<JsonElement>): ApiMessage =
     ApiMessage(role, buildJsonArray { parts.forEach { add(it) } })
 
+// The `type` discriminators below carry @EncodeDefault: the parts are pre-encoded
+// to JsonElement (AttachmentStore / ChatRequestBuilder) with a default Json whose
+// encodeDefaults = false, which would otherwise silently drop them — and
+// llama-server 400s a content part with no "type".
 @Serializable
 data class TextPart(
-    val type: String = "text",
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault val type: String = "text",
     val text: String,
 )
 
@@ -67,7 +74,8 @@ data class ImageUrl(val url: String)
 /** Image content part; [imageUrl].url carries a `data:<mime>;base64,…` URI. */
 @Serializable
 data class ImageUrlPart(
-    val type: String = "image_url",
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault val type: String = "image_url",
     @SerialName("image_url") val imageUrl: ImageUrl,
 )
 
@@ -81,7 +89,8 @@ data class InputAudio(
 
 @Serializable
 data class InputAudioPart(
-    val type: String = "input_audio",
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault val type: String = "input_audio",
     @SerialName("input_audio") val inputAudio: InputAudio,
 )
 
