@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Temporary camera captures, imported (downscaled) into filesDir/attachments
+         and then deleted. -->
+    <cache-path name="camera" path="camera/" />
+</paths>

@@ -11,6 +11,20 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Chat attachments: photo capture, gallery access (full media access rather
+         than the limited photo picker, by explicit user preference) and voice
+         messages for vision/audio-capable models. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+
     <application
         android:name=".LlamaChatApp"
         android:allowBackup="true"
@@ -41,6 +55,17 @@
             android:name=".data.gen.SummarizationService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- Hands the camera app a writable URI for photo capture. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="net.maz.llamachat.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

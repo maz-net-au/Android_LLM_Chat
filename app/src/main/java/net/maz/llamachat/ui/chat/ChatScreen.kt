@@ -1,6 +1,9 @@
 package net.maz.llamachat.ui.chat
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -35,15 +38,19 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
@@ -51,6 +58,8 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
@@ -63,8 +72,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextRange
@@ -73,7 +84,12 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
+import net.maz.llamachat.LlamaChatApp
+import net.maz.llamachat.data.model.Attachment
 import net.maz.llamachat.data.model.Catalog
 import net.maz.llamachat.data.model.ChatMessage
 import net.maz.llamachat.data.model.Role
@@ -83,6 +99,7 @@ import net.maz.llamachat.ui.components.DcAppBar
 import net.maz.llamachat.ui.components.MarkdownText
 import net.maz.llamachat.ui.theme.DcColors
 import net.maz.llamachat.vm.ChatViewModel
+import java.io.File
 import kotlin.math.roundToInt
 
 @Composable
@@ -95,6 +112,72 @@ fun ChatScreen(
     val state by vm.ui.collectAsStateWithLifecycle()
     val conv = state.conversation
     val context = LocalContext.current
+    val app = context.applicationContext as LlamaChatApp
+
+    // --- image attachment pickers -------------------------------------------
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent(),
+    ) { uri: Uri? -> uri?.let(vm::attachImage) }
+
+    val galleryPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) galleryLauncher.launch("image/*")
+        else Toast.makeText(context, "Photo access denied", Toast.LENGTH_SHORT).show()
+    }
+
+    fun pickGallery() {
+        // Full media permission (not the limited photo picker) so the pick isn't
+        // restricted to a hand-selected subset of photos.
+        val perm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_IMAGES
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        if (ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_GRANTED) {
+            galleryLauncher.launch("image/*")
+        } else {
+            galleryPermLauncher.launch(perm)
+        }
+    }
+
+    // The capture target must survive recomposition between launch and result.
+    var cameraUri by remember { mutableStateOf<Uri?>(null) }
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture(),
+    ) { ok ->
+        val uri = cameraUri
+        cameraUri = null
+        // attachImage imports (downscales) the capture into app storage; the cache
+        // file is swept on the next capture rather than deleted here, since the
+        // import reads it asynchronously.
+        if (ok && uri != null) vm.attachImage(uri)
+    }
+
+    fun launchCamera() {
+        val dir = File(context.cacheDir, "camera").apply { mkdirs() }
+        dir.listFiles()?.forEach { it.delete() } // sweep older captures
+        val file = File(dir, "capture_${System.currentTimeMillis()}.jpg")
+        val uri = FileProvider.getUriForFile(context, "net.maz.llamachat.fileprovider", file)
+        cameraUri = uri
+        cameraLauncher.launch(uri)
+    }
+
+    val cameraPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) launchCamera()
+        else Toast.makeText(context, "Camera access denied", Toast.LENGTH_SHORT).show()
+    }
+
+    fun takePhoto() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            launchCamera()
+        } else {
+            cameraPermLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
 
     // Export the conversation to a user-picked JSON file (a backup before summarizing).
     val exportLauncher = rememberLauncherForActivityResult(
@@ -193,6 +276,7 @@ fun ChatScreen(
                         }
                         MessageItem(
                             message = message,
+                            attachmentFiles = message.attachments.map { it to app.attachmentStore.fileFor(vm.convId, it) },
                             userName = userName,
                             characterName = characterName,
                             locked = message.locked,
@@ -242,8 +326,13 @@ fun ChatScreen(
             // Blank sends are allowed (forces the assistant to take another turn);
             // only an in-flight reply, impersonation or summarization disables the button.
             sendEnabled = !state.streaming && !state.impersonating && !state.summarizing,
+            canAttachImage = state.canAttachImage,
+            pendingImageFile = state.pendingImage?.let { app.attachmentStore.fileFor(vm.convId, it) },
             onInputChange = vm::setInput,
             onSend = vm::send,
+            onPickGallery = ::pickGallery,
+            onTakePhoto = ::takePhoto,
+            onRemovePendingImage = vm::removePendingImage,
         )
     }
 }
@@ -360,6 +449,7 @@ private fun ChatMessage.displayText(userName: String, characterName: String): St
 @Composable
 private fun MessageItem(
     message: ChatMessage,
+    attachmentFiles: List<Pair<Attachment, File>>,
     userName: String,
     characterName: String,
     locked: Boolean,
@@ -390,7 +480,7 @@ private fun MessageItem(
             if (editing) {
                 EditBox(editText, onEditTextChange, onSaveEdit, onCancelEdit)
             } else {
-                MessageBubble(message.displayText(userName, characterName), isUser, streamingCaret, onTap)
+                MessageBubble(message.displayText(userName, characterName), attachmentFiles, isUser, streamingCaret, onTap)
                 if (!isUser && message.variantCount > 1) {
                     VariantNav(message, onPrevVariant, onNextVariant)
                 }
@@ -404,7 +494,13 @@ private fun MessageItem(
 }
 
 @Composable
-private fun MessageBubble(text: String, isUser: Boolean, streamingCaret: Boolean, onTap: () -> Unit) {
+private fun MessageBubble(
+    text: String,
+    attachmentFiles: List<Pair<Attachment, File>>,
+    isUser: Boolean,
+    streamingCaret: Boolean,
+    onTap: () -> Unit,
+) {
     val shape = if (isUser) RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp) else RoundedCornerShape(0.dp)
     val bg = if (isUser) DcColors.PrimaryContainer else Color.Transparent
     // Only assistant replies carry <think> reasoning; user text is shown verbatim.
@@ -418,6 +514,20 @@ private fun MessageBubble(text: String, isUser: Boolean, streamingCaret: Boolean
             .clickable(onClick = onTap)
             .padding(if (isUser) PaddingUser else PaddingAssistant),
     ) {
+        attachmentFiles.forEach { (att, file) ->
+            when (att.kind) {
+                Attachment.KIND_IMAGE -> AsyncImage(
+                    model = file,
+                    contentDescription = "Attached image",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .padding(bottom = if (parsed.answer.isNotEmpty()) 6.dp else 0.dp)
+                        .widthIn(max = 240.dp)
+                        .heightIn(max = 240.dp)
+                        .clip(RoundedCornerShape(12.dp)),
+                )
+            }
+        }
         if (parsed.hasThink) {
             // Pulse only while this (last) message is actively streaming its think block;
             // a run that stopped mid-thought shows a static, still-expandable header.
@@ -591,7 +701,17 @@ private fun PillButton(label: String, icon: androidx.compose.ui.graphics.vector.
 }
 
 @Composable
-private fun InputBar(input: String, sendEnabled: Boolean, onInputChange: (String) -> Unit, onSend: () -> Unit) {
+private fun InputBar(
+    input: String,
+    sendEnabled: Boolean,
+    canAttachImage: Boolean,
+    pendingImageFile: File?,
+    onInputChange: (String) -> Unit,
+    onSend: () -> Unit,
+    onPickGallery: () -> Unit,
+    onTakePhoto: () -> Unit,
+    onRemovePendingImage: () -> Unit,
+) {
     // Mirror the String input in a TextFieldValue so external updates (impersonation
     // streaming, send-clear, prompt restore) can drop the caret at the end — that's
     // what makes the field scroll to reveal the freshly appended tail. Typing keeps
@@ -604,12 +724,19 @@ private fun InputBar(input: String, sendEnabled: Boolean, onInputChange: (String
         modifier = Modifier.fillMaxWidth().border(0.dp, Color.Transparent).padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 10.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
-        Box(
+        if (canAttachImage) {
+            AttachButton(enabled = sendEnabled, onPickGallery = onPickGallery, onTakePhoto = onTakePhoto)
+            Spacer(Modifier.width(8.dp))
+        }
+        Column(
             modifier = Modifier
                 .weight(1f)
                 .background(DcColors.SurfaceTint, RoundedCornerShape(22.dp))
                 .padding(horizontal = 16.dp, vertical = 10.dp),
         ) {
+            if (pendingImageFile != null) {
+                PendingImagePreview(pendingImageFile, onRemovePendingImage)
+            }
             BasicTextField(
                 value = field,
                 onValueChange = {
@@ -635,6 +762,61 @@ private fun InputBar(input: String, sendEnabled: Boolean, onInputChange: (String
                 .clickable(enabled = sendEnabled, onClick = onSend),
         ) {
             Icon(Icons.Filled.Send, contentDescription = "Send", tint = Color.White, modifier = Modifier.size(22.dp))
+        }
+    }
+}
+
+/** The (+) button shown for vision models, with the gallery/camera chooser. */
+@Composable
+private fun AttachButton(enabled: Boolean, onPickGallery: () -> Unit, onTakePhoto: () -> Unit) {
+    var menuOpen by remember { mutableStateOf(false) }
+    Box {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(44.dp)
+                .background(DcColors.SurfaceTint, CircleShape)
+                .clickable(enabled = enabled) { menuOpen = true },
+        ) {
+            Icon(Icons.Filled.Add, contentDescription = "Attach image", tint = DcColors.Primary, modifier = Modifier.size(24.dp))
+        }
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(
+                text = { Text("Choose from gallery", fontSize = 14.sp, color = DcColors.OnSurface) },
+                leadingIcon = { Icon(Icons.Filled.Image, contentDescription = null, tint = DcColors.OnSurfaceVariant, modifier = Modifier.size(19.dp)) },
+                onClick = { menuOpen = false; onPickGallery() },
+            )
+            DropdownMenuItem(
+                text = { Text("Take photo", fontSize = 14.sp, color = DcColors.OnSurface) },
+                leadingIcon = { Icon(Icons.Filled.PhotoCamera, contentDescription = null, tint = DcColors.OnSurfaceVariant, modifier = Modifier.size(19.dp)) },
+                onClick = { menuOpen = false; onTakePhoto() },
+            )
+        }
+    }
+}
+
+/** Thumbnail of the staged image above the text field, with a remove badge. */
+@Composable
+private fun PendingImagePreview(file: File, onRemove: () -> Unit) {
+    Box(Modifier.padding(bottom = 8.dp)) {
+        AsyncImage(
+            model = file,
+            contentDescription = "Attached image",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(64.dp)
+                .clip(RoundedCornerShape(10.dp)),
+        )
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(2.dp)
+                .size(18.dp)
+                .background(DcColors.OnSurface.copy(alpha = 0.75f), CircleShape)
+                .clickable(onClick = onRemove),
+        ) {
+            Icon(Icons.Filled.Close, contentDescription = "Remove image", tint = DcColors.Surface, modifier = Modifier.size(12.dp))
         }
     }
 }

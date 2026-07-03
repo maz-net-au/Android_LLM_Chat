@@ -1,10 +1,12 @@
 package net.maz.llamachat.vm
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -26,8 +28,10 @@ import net.maz.llamachat.data.gen.SummarizationConfig
 import net.maz.llamachat.data.gen.SummarizationController
 import net.maz.llamachat.data.gen.SummarizationService
 import net.maz.llamachat.data.gen.SummaryPhase
+import net.maz.llamachat.data.model.Attachment
 import net.maz.llamachat.data.model.ChatMessage
 import net.maz.llamachat.data.model.Conversation
+import net.maz.llamachat.data.model.ModelCapabilities
 import net.maz.llamachat.data.model.Role
 
 data class ChatUiState(
@@ -58,6 +62,14 @@ data class ChatUiState(
     val tokenCount: Int? = null,
     /** The server's context window (`n_ctx`) from `/props`, or null while unknown. */
     val contextLimit: Int? = null,
+    /** Image staged in the input bar, sent with the next message. */
+    val pendingImage: Attachment? = null,
+    /** True when the conversation's model name marks it vision-capable (-VL-/-VAL-). */
+    val canAttachImage: Boolean = false,
+    /** True when the conversation's model name marks it audio-capable (-AL-/-VAL-). */
+    val canRecordAudio: Boolean = false,
+    /** True while the mic button is held and audio is being captured. */
+    val recording: Boolean = false,
 )
 
 /**
@@ -89,6 +101,8 @@ class ChatViewModel(
         val editPrefix: String = "",
         val closed: Boolean = false,
         val summarizeDoneId: Long? = null,
+        val pendingImage: Attachment? = null,
+        val recording: Boolean = false,
     )
 
     private val local = MutableStateFlow(Local())
@@ -132,6 +146,16 @@ class ChatViewModel(
                 canSummarize = merged != null && SummarizationConfig.canSummarize(merged.messages.size),
                 tokenCount = u.tokens,
                 contextLimit = u.limit,
+                pendingImage = l.pendingImage,
+                recording = l.recording,
+            )
+        }.combine(app.settingsRepository.settings) { state, s ->
+            // Attachment affordances follow the model actually used for requests:
+            // the conversation's own, falling back to the persisted current model.
+            val model = state.conversation?.model?.takeIf { it.isNotEmpty() } ?: s.currentModel
+            state.copy(
+                canAttachImage = ModelCapabilities.supportsImages(model),
+                canRecordAudio = ModelCapabilities.supportsAudio(model),
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
@@ -194,11 +218,15 @@ class ChatViewModel(
 
     fun setInput(v: String) = local.update { it.copy(input = v) }
 
-    fun send() {
+    fun send() = sendInternal(local.value.input.trim(), listOfNotNull(local.value.pendingImage))
+
+    /**
+     * Append a user turn (text and/or [attachments]) plus the empty assistant turn,
+     * then hand generation to the service. A blank, attachment-free message is
+     * allowed: it forces the assistant to take another turn.
+     */
+    private fun sendInternal(text: String, attachments: List<Attachment>) {
         if (isBusy()) return
-        // A blank message is allowed: it appends an empty user turn and forces the
-        // assistant to take another turn.
-        val text = local.value.input.trim()
         val conv = base ?: return
         val prefixes = conv.character.usesNamePrefixes
         val userId = IdGen.next()
@@ -210,15 +238,38 @@ class ChatViewModel(
             messages = conv.messages +
                 // A blank input sends a truly empty user turn even in transcript mode,
                 // so the prefix isn't added to an otherwise-empty message.
-                ChatMessage.user(userId, if (prefixes && text.isNotEmpty()) "${conv.userName}: $text" else text) +
+                ChatMessage.user(
+                    userId,
+                    if (prefixes && text.isNotEmpty()) "${conv.userName}: $text" else text,
+                    attachments = attachments,
+                ) +
                 // In transcript mode, prefill the reply with "Character: " so the
                 // model is forced to speak as the character; generation continues it.
                 ChatMessage.assistant(assistantId, if (prefixes) "${conv.characterName}: " else ""),
         )
-        local.update { it.copy(input = "", selectedMsgId = null) }
+        local.update { it.copy(input = "", selectedMsgId = null, pendingImage = null) }
         saveThen(updated) {
             GenerationService.start(app, convId, assistantId, includePartial = prefixes, forceContinue = false, title = updated.title)
         }
+    }
+
+    // ---- attachments ---------------------------------------------------------
+
+    /** Import (downscale + copy) the picked image and stage it in the input bar,
+     *  replacing any image already staged. */
+    fun attachImage(uri: Uri) {
+        viewModelScope.launch {
+            val imported = app.attachmentStore.importImage(convId, uri) ?: return@launch
+            val previous = local.value.pendingImage
+            local.update { it.copy(pendingImage = imported) }
+            previous?.let { app.attachmentStore.delete(convId, listOf(it)) }
+        }
+    }
+
+    fun removePendingImage() {
+        val old = local.value.pendingImage ?: return
+        local.update { it.copy(pendingImage = null) }
+        viewModelScope.launch(Dispatchers.IO) { app.attachmentStore.delete(convId, listOf(old)) }
     }
 
     private fun deriveTitle(text: String): String =
@@ -388,6 +439,12 @@ class ChatViewModel(
             messages = conv.messages.filter { it.id != assistantId && it.id != userId },
         )
         local.update { it.copy(input = restore, selectedMsgId = null) }
+        val removedAtts = conv.messages
+            .filter { it.id == assistantId || it.id == userId }
+            .flatMap { it.attachments }
+        if (removedAtts.isNotEmpty()) {
+            viewModelScope.launch(Dispatchers.IO) { app.attachmentStore.delete(convId, removedAtts) }
+        }
         saveThen(updated)
     }
 
@@ -395,7 +452,10 @@ class ChatViewModel(
         val conv = base ?: return
         // Clearing wipes the history the summary described, so drop the summary too.
         val updated = conv.copy(updatedAt = System.currentTimeMillis(), messages = emptyList(), summary = "")
-        local.update { it.copy(selectedMsgId = null) }
+        // deleteAll wipes the conversation's whole attachment dir — including any
+        // staged (pending) image — so drop that from the input bar too.
+        local.update { it.copy(selectedMsgId = null, pendingImage = null) }
+        viewModelScope.launch(Dispatchers.IO) { app.attachmentStore.deleteAll(convId) }
         saveThen(updated)
     }
 
@@ -403,6 +463,7 @@ class ChatViewModel(
         GenerationService.cancel(app) // tear down any reply still streaming for this chat
         viewModelScope.launch {
             repo.delete(convId)
+            launch(Dispatchers.IO) { app.attachmentStore.deleteAll(convId) }
             local.update { it.copy(closed = true) }
         }
     }
