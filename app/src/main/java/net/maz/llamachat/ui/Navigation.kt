@@ -69,6 +69,7 @@ fun LlamaChatNavHost() {
                 vm = vm,
                 onBack = { navController.popBackStack() },
                 onOpenConversation = { id -> navController.navigate(Routes.chat(id)) },
+                onEditConversation = { id -> navController.navigate(Routes.newConv(id)) },
                 onNewConversation = { navController.navigate(Routes.NEW) },
                 onManageCharacters = { navController.navigate(Routes.CHARACTERS) },
                 onOpenSettings = openSettings,

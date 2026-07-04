@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -55,6 +56,18 @@ class HomeViewModel(
                 Catalog.characters.none { it.name == name }
             }
             onResult(ImportResult.Restored(conv.title, missing))
+        }
+    }
+
+    /** Serialize [conv] to the text backup format for export to a user-picked file.
+     *  The list already carries full message history, so no DB round-trip is needed. */
+    fun exportJson(conv: Conversation): String = BackupCodec.encode(conv)
+
+    /** Permanently delete a conversation (and its attachment files) by id. */
+    fun delete(id: Long) {
+        viewModelScope.launch {
+            repo.delete(id)
+            launch(Dispatchers.IO) { app.attachmentStore.deleteAll(id) }
         }
     }
 
