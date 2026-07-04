@@ -19,9 +19,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -37,7 +41,8 @@ import net.maz.llamachat.ui.components.DcAppBar
 import net.maz.llamachat.ui.theme.DcColors
 
 /** Entry screen: one tile per major feature. Generation tiles are placeholders
- *  until their ComfyUI-backed screens exist. */
+ *  until their ComfyUI-backed screens exist. Settings is a primary-styled action
+ *  pinned to the bottom of the screen. */
 @Composable
 fun LauncherScreen(
     onOpenChat: () -> Unit,
@@ -48,23 +53,41 @@ fun LauncherScreen(
 
         Column(
             Modifier
-                .fillMaxSize()
+                .weight(1f)
+                .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 LauncherTile(Icons.Outlined.Forum, "Chat", enabled = true, onClick = onOpenChat)
+                LauncherTile(Icons.Filled.ImageSearch, "Image to Text", enabled = false)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 LauncherTile(Icons.Filled.Image, "Image Generation", enabled = false)
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 LauncherTile(Icons.Filled.GraphicEq, "Audio Generation", enabled = false)
-                LauncherTile(Icons.Filled.Movie, "Video Generation", enabled = false)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                LauncherTile(Icons.Filled.Settings, "Settings", enabled = true, onClick = onOpenSettings)
+                LauncherTile(Icons.Filled.Movie, "Video Generation", enabled = false)
                 Spacer(Modifier.weight(1f))
             }
+        }
+
+        Button(
+            onClick = onOpenSettings,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = DcColors.Primary,
+                contentColor = Color.White,
+            ),
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+                .height(48.dp),
+        ) {
+            Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.size(8.dp))
+            Text("Settings", fontSize = 15.sp, fontWeight = FontWeight.Medium)
         }
     }
 }
