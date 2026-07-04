@@ -90,6 +90,15 @@ data class Conversation(
      *  those messages in every request, letting the conversation continue past the
      *  model's context window. Editable in the chat-details screen. */
     val summary: String = "",
+    /** Last exact transcript token count from the server's `/tokenize`, cached so the
+     *  context readout can show immediately on reopen without re-hitting the server
+     *  (which would force the model to load). 0 = never measured; refreshed after each
+     *  generation. Not part of the backup format (derived/ephemeral). */
+    val tokenCount: Int = 0,
+    /** Last known context window (`n_ctx` from `/props`), cached alongside [tokenCount]
+     *  so the "/ limit · %" readout also shows on reopen. 0 = unknown. Same derived/
+     *  ephemeral status: not part of the backup format. */
+    val contextLimit: Int = 0,
     val messages: List<ChatMessage> = emptyList(),
 ) {
     val character get() = Catalog.character(characterName)

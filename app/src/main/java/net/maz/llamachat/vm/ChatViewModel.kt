@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -59,7 +60,8 @@ data class ChatUiState(
     /** True when the chat has enough history to be worth summarizing. */
     val canSummarize: Boolean = false,
     /** Exact token count of the transcript from the server's `/tokenize`, measured
-     *  after each reply finishes; null until the first measurement lands. */
+     *  after each reply finishes and cached on the conversation. On reopen it shows the
+     *  last cached value (no fresh `/tokenize` on load); null only when never measured. */
     val tokenCount: Int? = null,
     /** The server's context window (`n_ctx`) from `/props`, or null while unknown. */
     val contextLimit: Int? = null,
@@ -145,8 +147,11 @@ class ChatViewModel(
                 summaryProgress = if (summarizing) sum!!.text else "",
                 summarizeDoneId = l.summarizeDoneId,
                 canSummarize = merged != null && SummarizationConfig.canSummarize(merged.messages.size),
-                tokenCount = u.tokens,
-                contextLimit = u.limit,
+                // Prefer a live measurement; fall back to the count persisted on the
+                // conversation so a reopened chat shows its last-known usage without a
+                // fresh `/tokenize` (which would force the server to load the model).
+                tokenCount = u.tokens ?: merged?.tokenCount?.takeIf { it > 0 },
+                contextLimit = u.limit ?: merged?.contextLimit?.takeIf { it > 0 },
                 pendingImage = l.pendingImage,
                 recording = l.recording,
             )
@@ -163,14 +168,18 @@ class ChatViewModel(
     init {
         // Prime [base] so actions work even before the UI starts collecting.
         viewModelScope.launch { base = repo.get(convId) }
-        // Measure context usage whenever a generation for this chat finishes — and
-        // once on open, since the flow starts out inactive. distinctUntilChanged keeps
-        // us to the active→inactive edges rather than every token. The service persists
-        // the final text before clearing this state, so Room is up to date by now.
+        // Measure context usage whenever a generation for this chat finishes.
+        // distinctUntilChanged keeps us to the active→inactive edges rather than every
+        // token; drop(1) skips the initial state on open so we DON'T `/tokenize` merely
+        // for reopening an old chat (which would force the server to load the model) —
+        // the readout shows the value cached on the conversation until the next reply.
+        // The service persists the final text before clearing this state, so Room is up
+        // to date by the time we measure.
         viewModelScope.launch {
             controller.state
                 .map { it?.convId == convId }
                 .distinctUntilChanged()
+                .drop(1)
                 .collect { active -> if (!active) refreshUsage() }
         }
         // React to a finished summarization: on DONE, flag the one-shot navigation to
@@ -195,7 +204,9 @@ class ChatViewModel(
     /** Re-measure token usage against the server: exact transcript tokens via
      *  `/tokenize`, plus the context window via `/props` if not yet known. The
      *  context window can only be read once the server has a model loaded, which a
-     *  finished reply guarantees. Failures leave the previous values in place. */
+     *  finished reply guarantees. A fresh count is also cached on the conversation so
+     *  the readout can show on reopen without re-measuring. Failures leave the previous
+     *  values in place. */
     private var usageJob: Job? = null
     private fun refreshUsage() {
         usageJob?.cancel()
@@ -203,12 +214,26 @@ class ChatViewModel(
             val conv = repo.get(convId) ?: return@launch
             val s = app.settingsRepository.current()
             val model = conv.model.ifEmpty { s.currentModel }
+            // The window doesn't change per model, so prefer any value already known —
+            // the session's, then the one cached on the conversation — before asking
+            // `/props`.
             val limit = usage.value.limit
+                ?: conv.contextLimit.takeIf { it > 0 }
                 ?: app.llamaClient.fetchContextSize(s.ip, s.port, model).getOrNull()
             val tokens = app.llamaClient
                 .countTokens(s.ip, s.port, ChatRequestBuilder.transcriptForCount(conv), model)
                 .getOrNull()
             usage.update { it.copy(tokens = tokens ?: it.tokens, limit = limit ?: it.limit) }
+            // Cache the fresh values on the conversation for the next reopen. Re-read so a
+            // concurrent edit isn't clobbered, and keep updatedAt as-is (a usage refresh
+            // shouldn't reorder the conversation list).
+            repo.get(convId)?.let { fresh ->
+                val newTokens = tokens ?: fresh.tokenCount
+                val newLimit = limit ?: fresh.contextLimit
+                if (newTokens != fresh.tokenCount || newLimit != fresh.contextLimit) {
+                    repo.save(fresh.copy(tokenCount = newTokens, contextLimit = newLimit))
+                }
+            }
         }
     }
 
