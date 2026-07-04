@@ -46,7 +46,6 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.FileDownload
@@ -275,11 +274,9 @@ fun ChatScreen(
                 if (state.canSummarize) {
                     add(AppBarMenuItem(Icons.Filled.Compress, "Summarize & continue", DcColors.OnSurfaceVariant, DcColors.OnSurface, vm::summarize))
                 }
-                add(AppBarMenuItem(Icons.Filled.Refresh, "Regenerate reply", DcColors.OnSurfaceVariant, DcColors.OnSurface, vm::regenerate))
                 add(AppBarMenuItem(Icons.Filled.FileDownload, "Export conversation", DcColors.OnSurfaceVariant, DcColors.OnSurface) {
                     exportLauncher.launch("${(conv?.title ?: "conversation").ifBlank { "conversation" }}.json")
                 })
-                add(AppBarMenuItem(Icons.Filled.DeleteSweep, "Clear messages", DcColors.OnSurfaceVariant, DcColors.OnSurface, vm::clearMessages))
                 add(AppBarMenuItem(Icons.Filled.Delete, "Delete conversation", DcColors.Error, DcColors.Error, vm::deleteConversation))
             },
         )
