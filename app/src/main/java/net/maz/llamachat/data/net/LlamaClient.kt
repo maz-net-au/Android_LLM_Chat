@@ -135,6 +135,12 @@ class LlamaClient {
             .build()
 
         val listener = object : EventSourceListener() {
+            // Whether an emitted `<think>` is still open (server is streaming reasoning
+            // via reasoning_content). Reconstituting the tags around the separated field
+            // lets the reasoning stream to the existing think-block UI. Touched only from
+            // the single SSE callback thread, so no synchronization needed.
+            private var thinkOpen = false
+
             override fun onEvent(
                 eventSource: EventSource,
                 id: String?,
@@ -142,19 +148,39 @@ class LlamaClient {
                 data: String,
             ) {
                 if (data == "[DONE]") {
+                    finishThink()
                     close()
                     return
                 }
                 val delta = runCatching {
-                    json.decodeFromString<ChatChunk>(data)
-                        .choices.firstOrNull()?.delta?.content
-                }.getOrNull()
-                if (!delta.isNullOrEmpty()) {
-                    trySend(delta)
+                    json.decodeFromString<ChatChunk>(data).choices.firstOrNull()?.delta
+                }.getOrNull() ?: return
+                // Wrap any reasoning_content in `<think>…</think>`; pass content through
+                // as-is (it may already carry literal tags if the server isn't parsing
+                // reasoning). A delta can, at the transition, carry both.
+                val out = StringBuilder()
+                if (!delta.reasoningContent.isNullOrEmpty()) {
+                    if (!thinkOpen) { out.append("<think>"); thinkOpen = true }
+                    out.append(delta.reasoningContent)
+                }
+                if (!delta.content.isNullOrEmpty()) {
+                    if (thinkOpen) { out.append("</think>"); thinkOpen = false }
+                    out.append(delta.content)
+                }
+                if (out.isNotEmpty()) trySend(out.toString())
+            }
+
+            /** Close a dangling reasoning block if the stream ends mid-thought, so the
+             *  stored text stays well-formed (`<think>…</think>` rather than an open tag). */
+            private fun finishThink() {
+                if (thinkOpen) {
+                    trySend("</think>")
+                    thinkOpen = false
                 }
             }
 
             override fun onClosed(eventSource: EventSource) {
+                finishThink()
                 close()
             }
 

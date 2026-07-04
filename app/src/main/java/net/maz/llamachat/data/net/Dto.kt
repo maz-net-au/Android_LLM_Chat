@@ -109,6 +109,12 @@ data class ChunkChoice(
 @Serializable
 data class Delta(
     val content: String? = null,
+    /** Chain-of-thought, streamed separately when the server does its own reasoning
+     *  parsing (llama.cpp with a `reasoning_format` set strips the `<think>` tags from
+     *  [content] and emits the thoughts here). The client folds it back into inline
+     *  `<think>…</think>` so the rest of the app — which stores/renders reasoning that
+     *  way — sees a single consistent shape regardless of server config. */
+    @SerialName("reasoning_content") val reasoningContent: String? = null,
 )
 
 @Serializable
