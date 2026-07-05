@@ -1000,6 +1000,6 @@ private fun EmptyChat(characterName: String) {
             Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null, tint = DcColors.Primary, modifier = Modifier.size(32.dp))
         }
         Text("Say hello to $characterName", fontSize = 15.sp, color = DcColors.OnSurfaceMedium, modifier = Modifier.padding(top = 12.dp))
-        Text("Your messages stay on this device", fontSize = 13.sp, color = DcColors.OnSurfaceFaint, modifier = Modifier.padding(top = 2.dp))
+        // Text("Your messages stay on this network", fontSize = 13.sp, color = DcColors.OnSurfaceFaint, modifier = Modifier.padding(top = 2.dp))
     }
 }
