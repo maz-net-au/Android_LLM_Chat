@@ -25,6 +25,7 @@ import net.maz.llamachat.ui.home.HomeScreen
 import net.maz.llamachat.ui.launcher.LauncherScreen
 import net.maz.llamachat.ui.newconv.NewConversationScreen
 import net.maz.llamachat.ui.settings.SettingsScreen
+import net.maz.llamachat.ui.workflow.WorkflowFormScreen
 import net.maz.llamachat.ui.workflow.WorkflowPickerScreen
 import net.maz.llamachat.vm.CharacterViewModel
 import net.maz.llamachat.vm.ChatViewModel
@@ -32,6 +33,7 @@ import net.maz.llamachat.vm.GeneratorViewModel
 import net.maz.llamachat.vm.HomeViewModel
 import net.maz.llamachat.vm.NewConversationViewModel
 import net.maz.llamachat.vm.SettingsViewModel
+import net.maz.llamachat.vm.WorkflowFormViewModel
 import net.maz.llamachat.vm.WorkflowPickerViewModel
 
 /** Vision model the "Image to Text" quick chat is pinned to. */
@@ -111,10 +113,26 @@ fun LlamaChatNavHost() {
             WorkflowPickerScreen(
                 vm = vm,
                 flowType = flowType,
-                // Step 8 registers the form route; until then a selection is inert.
-                onSelect = { },
+                onSelect = { id -> navController.navigate(Routes.workflowForm(id)) },
                 // Step 9 registers the gallery route.
                 onOpenGallery = { },
+                onBack = { navController.popBackStack() },
+                onOpenSettings = openSettings,
+            )
+        }
+
+        composable(
+            route = "${Routes.WORKFLOW_FORM}/{workflowId}",
+            arguments = listOf(navArgument("workflowId") { type = NavType.LongType }),
+        ) { backStackEntry ->
+            val workflowId = backStackEntry.arguments?.getLong("workflowId") ?: return@composable
+            val vm: WorkflowFormViewModel =
+                viewModel(factory = WorkflowFormViewModel.factory(app, workflowId))
+            WorkflowFormScreen(
+                vm = vm,
+                // Step 9 will land on the gallery (filtered to the flow type) so the
+                // new job's progress row is immediately visible.
+                onSubmitted = { navController.popBackStack() },
                 onBack = { navController.popBackStack() },
                 onOpenSettings = openSettings,
             )
