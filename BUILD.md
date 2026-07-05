@@ -1,4 +1,4 @@
-# llama chat — Android app
+# PrivateAI — Android app
 
 A native Android chat client for a self-hosted [llama-server](https://github.com/ggml-org/llama.cpp/tree/master/tools/server),
 built from the Claude Design handoff in `project/LlamaChat.dc.html`. Jetpack Compose + Material 3,

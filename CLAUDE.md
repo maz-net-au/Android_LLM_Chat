@@ -1,4 +1,4 @@
-# LLMApp (llama chat)
+# LLMApp (PrivateAI)
 
 Android chat client for a self-hosted llama-server, with a ComfyUI instance on the
 same host for (future) image/audio/video generation. Kotlin + Jetpack Compose,

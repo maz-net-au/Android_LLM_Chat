@@ -50,7 +50,7 @@ fun LauncherScreen(
     onOpenSettings: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().background(DcColors.Surface)) {
-        DcAppBar(title = "llama chat", onOpenSettings = onOpenSettings)
+        DcAppBar(title = "PrivateAI", onOpenSettings = onOpenSettings)
 
         Column(
             Modifier
