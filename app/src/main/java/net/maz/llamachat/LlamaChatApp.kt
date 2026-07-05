@@ -5,6 +5,7 @@ import net.maz.llamachat.data.CharacterRepository
 import net.maz.llamachat.data.ConversationRepository
 import net.maz.llamachat.data.SettingsRepository
 import net.maz.llamachat.data.attach.AttachmentStore
+import net.maz.llamachat.data.comfy.WorkflowStore
 import net.maz.llamachat.data.db.AppDatabase
 import net.maz.llamachat.data.gen.GenerationController
 import net.maz.llamachat.data.gen.SummarizationController
@@ -34,6 +35,8 @@ class LlamaChatApp : Application() {
     val comfyClient by lazy { ComfyClient() }
     /** Files behind message image/audio attachments (app-private storage). */
     val attachmentStore by lazy { AttachmentStore(this) }
+    /** Installed ComfyUI workflow packages + the shared base enums file. */
+    val workflowStore by lazy { WorkflowStore(this) }
     /** Live progress of the in-flight reply, shared with the GenerationService. */
     val generation = GenerationController()
     /** Live state of the in-flight summarization, shared with the SummarizationService. */
