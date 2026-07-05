@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import net.maz.llamachat.LlamaChatApp
+import net.maz.llamachat.data.comfy.FlowType
 import net.maz.llamachat.data.gen.GenerationService
 import net.maz.llamachat.data.model.Conversation
 import net.maz.llamachat.ui.characters.CharacterEditScreen
@@ -24,12 +25,14 @@ import net.maz.llamachat.ui.home.HomeScreen
 import net.maz.llamachat.ui.launcher.LauncherScreen
 import net.maz.llamachat.ui.newconv.NewConversationScreen
 import net.maz.llamachat.ui.settings.SettingsScreen
+import net.maz.llamachat.ui.workflow.WorkflowPickerScreen
 import net.maz.llamachat.vm.CharacterViewModel
 import net.maz.llamachat.vm.ChatViewModel
 import net.maz.llamachat.vm.GeneratorViewModel
 import net.maz.llamachat.vm.HomeViewModel
 import net.maz.llamachat.vm.NewConversationViewModel
 import net.maz.llamachat.vm.SettingsViewModel
+import net.maz.llamachat.vm.WorkflowPickerViewModel
 
 /** Vision model the "Image to Text" quick chat is pinned to. */
 private const val QUICK_IMAGE_MODEL = "Qwen3.6-VL-27B-NR"
@@ -43,10 +46,19 @@ object Routes {
     const val CHARACTERS = "characters"
     const val CHARACTER_EDIT = "character_edit"
     const val CHARACTER_GENERATE = "character_generate"
+    const val WORKFLOWS = "workflows"
+    const val WORKFLOW_FORM = "workflow_form"
+    const val GALLERY = "gallery"
+    const val VIEWER = "viewer"
     fun chat(id: Long) = "$CHAT/$id"
     fun newConv(editId: Long? = null) = if (editId == null) NEW else "$NEW?convId=$editId"
     fun editCharacter(name: String? = null) =
         if (name == null) CHARACTER_EDIT else "$CHARACTER_EDIT?name=${Uri.encode(name)}"
+    fun workflows(flowType: FlowType) = "$WORKFLOWS/${flowType.key}"
+    fun workflowForm(workflowId: Long) = "$WORKFLOW_FORM/$workflowId"
+    fun gallery(flowType: FlowType? = null) =
+        if (flowType == null) GALLERY else "$GALLERY?flowType=${flowType.key}"
+    fun viewer(itemId: Long) = "$VIEWER/$itemId"
 }
 
 @Composable
@@ -83,6 +95,27 @@ fun LlamaChatNavHost() {
                         navController.navigate(Routes.chat(id))
                     }
                 },
+                onOpenFlow = { flowType -> navController.navigate(Routes.workflows(flowType)) },
+                onOpenSettings = openSettings,
+            )
+        }
+
+        composable(
+            route = "${Routes.WORKFLOWS}/{flowType}",
+            arguments = listOf(navArgument("flowType") { type = NavType.StringType }),
+        ) { backStackEntry ->
+            val flowType = FlowType.fromKey(backStackEntry.arguments?.getString("flowType").orEmpty())
+                ?: return@composable
+            val vm: WorkflowPickerViewModel =
+                viewModel(factory = WorkflowPickerViewModel.factory(app, flowType))
+            WorkflowPickerScreen(
+                vm = vm,
+                flowType = flowType,
+                // Step 8 registers the form route; until then a selection is inert.
+                onSelect = { },
+                // Step 9 registers the gallery route.
+                onOpenGallery = { },
+                onBack = { navController.popBackStack() },
                 onOpenSettings = openSettings,
             )
         }

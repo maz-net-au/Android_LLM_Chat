@@ -17,11 +17,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Animation
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Transform
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -30,23 +32,24 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import net.maz.llamachat.data.comfy.FlowType
 import net.maz.llamachat.ui.components.DcAppBar
 import net.maz.llamachat.ui.theme.DcColors
 
-/** Entry screen: one tile per major feature. Generation tiles are placeholders
- *  until their ComfyUI-backed screens exist. Settings is a primary-styled action
- *  pinned to the bottom of the screen. */
+/** Entry screen: one tile per major feature. The generation tiles each open a
+ *  ComfyUI workflow picker for their flow type. Settings is a primary-styled
+ *  action pinned to the bottom of the screen. */
 @Composable
 fun LauncherScreen(
     onOpenChat: () -> Unit,
     onImageToText: () -> Unit,
+    onOpenFlow: (FlowType) -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().background(DcColors.Surface)) {
@@ -61,15 +64,29 @@ fun LauncherScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                LauncherTile(Icons.Outlined.Forum, "Chat", enabled = true, onClick = onOpenChat)
-                LauncherTile(Icons.Filled.ImageSearch, "Image to Text", enabled = true, onClick = onImageToText)
+                LauncherTile(Icons.Outlined.Forum, "Chat", onClick = onOpenChat)
+                LauncherTile(Icons.Filled.ImageSearch, "Image to Text", onClick = onImageToText)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                LauncherTile(Icons.Filled.Image, "Image Generation", enabled = false)
-                LauncherTile(Icons.Filled.GraphicEq, "Audio Generation", enabled = false)
+                LauncherTile(Icons.Filled.Image, FlowType.TEXT_TO_IMAGE.label) {
+                    onOpenFlow(FlowType.TEXT_TO_IMAGE)
+                }
+                LauncherTile(Icons.Filled.Transform, FlowType.IMAGE_TO_IMAGE.label) {
+                    onOpenFlow(FlowType.IMAGE_TO_IMAGE)
+                }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                LauncherTile(Icons.Filled.Movie, "Video Generation", enabled = false)
+                LauncherTile(Icons.Filled.Movie, FlowType.TEXT_TO_VIDEO.label) {
+                    onOpenFlow(FlowType.TEXT_TO_VIDEO)
+                }
+                LauncherTile(Icons.Filled.Animation, FlowType.IMAGE_TO_VIDEO.label) {
+                    onOpenFlow(FlowType.IMAGE_TO_VIDEO)
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                LauncherTile(Icons.Filled.GraphicEq, FlowType.TEXT_TO_AUDIO.label) {
+                    onOpenFlow(FlowType.TEXT_TO_AUDIO)
+                }
                 Spacer(Modifier.weight(1f))
             }
         }
@@ -97,8 +114,7 @@ fun LauncherScreen(
 private fun RowScope.LauncherTile(
     icon: ImageVector,
     label: String,
-    enabled: Boolean,
-    onClick: () -> Unit = {},
+    onClick: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -106,8 +122,7 @@ private fun RowScope.LauncherTile(
             .aspectRatio(1.15f)
             .clip(RoundedCornerShape(18.dp))
             .background(DcColors.SurfaceTint)
-            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
-            .alpha(if (enabled) 1f else 0.4f)
+            .clickable(onClick = onClick)
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -120,8 +135,5 @@ private fun RowScope.LauncherTile(
             fontSize = 14.sp,
             fontWeight = FontWeight.Medium,
         )
-        if (!enabled) {
-            Text("Coming soon", color = DcColors.OnSurfaceFaint, fontSize = 11.sp)
-        }
     }
 }
