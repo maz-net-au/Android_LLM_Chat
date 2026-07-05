@@ -71,6 +71,8 @@ dependencies {
     // Attachments: image loading + EXIF rotation for imported photos.
     // Coil 2.x — 3.x needs newer Kotlin/Compose than this project pins.
     implementation("io.coil-kt:coil-compose:2.6.0")
+    // Video frame thumbnails for the generated-media gallery.
+    implementation("io.coil-kt:coil-video:2.6.0")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
 
     // Persistence

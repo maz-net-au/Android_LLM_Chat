@@ -21,6 +21,8 @@ import net.maz.llamachat.ui.characters.CharacterEditScreen
 import net.maz.llamachat.ui.characters.CharacterListScreen
 import net.maz.llamachat.ui.characters.GeneratorScreen
 import net.maz.llamachat.ui.chat.ChatScreen
+import net.maz.llamachat.ui.gallery.GalleryScreen
+import net.maz.llamachat.ui.gallery.ViewerScreen
 import net.maz.llamachat.ui.home.HomeScreen
 import net.maz.llamachat.ui.launcher.LauncherScreen
 import net.maz.llamachat.ui.newconv.NewConversationScreen
@@ -29,6 +31,7 @@ import net.maz.llamachat.ui.workflow.WorkflowFormScreen
 import net.maz.llamachat.ui.workflow.WorkflowPickerScreen
 import net.maz.llamachat.vm.CharacterViewModel
 import net.maz.llamachat.vm.ChatViewModel
+import net.maz.llamachat.vm.GalleryViewModel
 import net.maz.llamachat.vm.GeneratorViewModel
 import net.maz.llamachat.vm.HomeViewModel
 import net.maz.llamachat.vm.NewConversationViewModel
@@ -98,6 +101,7 @@ fun LlamaChatNavHost() {
                     }
                 },
                 onOpenFlow = { flowType -> navController.navigate(Routes.workflows(flowType)) },
+                onOpenGallery = { navController.navigate(Routes.gallery()) },
                 onOpenSettings = openSettings,
             )
         }
@@ -114,8 +118,7 @@ fun LlamaChatNavHost() {
                 vm = vm,
                 flowType = flowType,
                 onSelect = { id -> navController.navigate(Routes.workflowForm(id)) },
-                // Step 9 registers the gallery route.
-                onOpenGallery = { },
+                onOpenGallery = { navController.navigate(Routes.gallery(flowType)) },
                 onBack = { navController.popBackStack() },
                 onOpenSettings = openSettings,
             )
@@ -130,9 +133,42 @@ fun LlamaChatNavHost() {
                 viewModel(factory = WorkflowFormViewModel.factory(app, workflowId))
             WorkflowFormScreen(
                 vm = vm,
-                // Step 9 will land on the gallery (filtered to the flow type) so the
-                // new job's progress row is immediately visible.
-                onSubmitted = { navController.popBackStack() },
+                // Land on the gallery (filtered to the flow type) so the new job's
+                // progress row is immediately visible; back returns to the picker.
+                onSubmitted = { flowType ->
+                    navController.navigate(Routes.gallery(flowType)) {
+                        popUpTo("${Routes.WORKFLOW_FORM}/{workflowId}") { inclusive = true }
+                    }
+                },
+                onBack = { navController.popBackStack() },
+                onOpenSettings = openSettings,
+            )
+        }
+
+        composable(
+            route = "${Routes.GALLERY}?flowType={flowType}",
+            arguments = listOf(navArgument("flowType") { type = NavType.StringType; defaultValue = "" }),
+        ) { backStackEntry ->
+            val initialTab = FlowType.fromKey(backStackEntry.arguments?.getString("flowType").orEmpty())
+            val vm: GalleryViewModel =
+                viewModel(factory = GalleryViewModel.factory(app, initialTab))
+            GalleryScreen(
+                vm = vm,
+                onOpenItem = { id -> navController.navigate(Routes.viewer(id)) },
+                onBack = { navController.popBackStack() },
+                onOpenSettings = openSettings,
+            )
+        }
+
+        composable(
+            route = "${Routes.VIEWER}/{itemId}",
+            arguments = listOf(navArgument("itemId") { type = NavType.LongType }),
+        ) { backStackEntry ->
+            val itemId = backStackEntry.arguments?.getLong("itemId") ?: return@composable
+            val vm: GalleryViewModel = viewModel(factory = GalleryViewModel.factory(app))
+            ViewerScreen(
+                vm = vm,
+                itemId = itemId,
                 onBack = { navController.popBackStack() },
                 onOpenSettings = openSettings,
             )

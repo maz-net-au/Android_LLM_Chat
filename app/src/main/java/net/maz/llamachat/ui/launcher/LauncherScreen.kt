@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Animation
+import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.ImageSearch
@@ -50,6 +51,7 @@ fun LauncherScreen(
     onOpenChat: () -> Unit,
     onImageToText: () -> Unit,
     onOpenFlow: (FlowType) -> Unit,
+    onOpenGallery: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().background(DcColors.Surface)) {
@@ -87,7 +89,7 @@ fun LauncherScreen(
                 LauncherTile(Icons.Filled.GraphicEq, FlowType.TEXT_TO_AUDIO.label) {
                     onOpenFlow(FlowType.TEXT_TO_AUDIO)
                 }
-                Spacer(Modifier.weight(1f))
+                LauncherTile(Icons.Filled.Collections, "Gallery", onClick = onOpenGallery)
             }
         }
 
