@@ -62,6 +62,11 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <service
+            android:name=".data.comfy.ComfyGenerationService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <!-- Hands the camera app a writable URI for photo capture. -->
         <provider
             android:name="androidx.core.content.FileProvider"

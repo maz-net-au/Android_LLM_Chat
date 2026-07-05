@@ -7,6 +7,7 @@ import net.maz.llamachat.data.GalleryRepository
 import net.maz.llamachat.data.gallery.GalleryStore
 import net.maz.llamachat.data.SettingsRepository
 import net.maz.llamachat.data.attach.AttachmentStore
+import net.maz.llamachat.data.comfy.ComfyJobController
 import net.maz.llamachat.data.comfy.WorkflowStore
 import net.maz.llamachat.data.db.AppDatabase
 import net.maz.llamachat.data.gen.GenerationController
@@ -47,6 +48,8 @@ class LlamaChatApp : Application() {
     val generation = GenerationController()
     /** Live state of the in-flight summarization, shared with the SummarizationService. */
     val summarization = SummarizationController()
+    /** Ledger of ComfyUI generation jobs, shared with the ComfyGenerationService. */
+    val comfyJobs by lazy { ComfyJobController(this) }
 
     /** App-scoped, for health probes that outlive any single screen. */
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -58,6 +61,7 @@ class LlamaChatApp : Application() {
         super.onCreate()
         characterRepository // touch to load the library at startup
         healthMonitor.start()
+        comfyJobs.resumeIfNeeded() // pick jobs submitted before a process death back up
     }
 
     companion object {
