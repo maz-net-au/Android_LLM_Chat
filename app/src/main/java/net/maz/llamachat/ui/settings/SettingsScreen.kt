@@ -103,6 +103,9 @@ fun SettingsScreen(
             Spacer(Modifier.height(4.dp))
             ServerStatusRow("llama-server", health.llama)
             ServerStatusRow("ComfyUI", health.comfy)
+
+            Spacer(Modifier.height(28.dp))
+            WorkflowSection(vm)
         }
     }
 }
