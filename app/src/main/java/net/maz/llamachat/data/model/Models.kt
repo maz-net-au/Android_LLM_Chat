@@ -104,8 +104,11 @@ data class Conversation(
     companion object {
         /** Reserved id for the launcher's ephemeral "Image to Text" quick chat: a
          *  single scratch conversation that is reset on every launch, hidden from
-         *  the conversation list, and stripped of chat-management menu actions. */
-        const val QUICK_IMAGE_ID = -100L
+         *  the conversation list, and stripped of chat-management menu actions.
+         *  Must be positive (GenerationService rejects negative ids as missing
+         *  extras) yet can't collide with IdGen, which mints from the epoch-millis
+         *  clock — values this small are unreachable. */
+        const val QUICK_IMAGE_ID = 1L
     }
 
     val character get() = Catalog.character(characterName)
