@@ -21,6 +21,12 @@
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
+    <!-- Gallery export writes into MediaStore, which is permissionless from
+         API 29; only the legacy 26–28 path still needs this. -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
     <uses-feature
         android:name="android.hardware.camera"
         android:required="false" />
