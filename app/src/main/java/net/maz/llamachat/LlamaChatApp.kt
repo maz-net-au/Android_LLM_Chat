@@ -8,6 +8,7 @@ import net.maz.llamachat.data.attach.AttachmentStore
 import net.maz.llamachat.data.db.AppDatabase
 import net.maz.llamachat.data.gen.GenerationController
 import net.maz.llamachat.data.gen.SummarizationController
+import net.maz.llamachat.data.net.ComfyClient
 import net.maz.llamachat.data.net.LlamaClient
 import net.maz.llamachat.data.net.ServerHealthMonitor
 import kotlinx.coroutines.CoroutineScope
@@ -29,6 +30,8 @@ class LlamaChatApp : Application() {
     // mirrored) before any screen resolves a conversation's character.
     val characterRepository by lazy { CharacterRepository(this) }
     val llamaClient by lazy { LlamaClient() }
+    /** ComfyUI HTTP API (media generation): submit, poll, download. */
+    val comfyClient by lazy { ComfyClient() }
     /** Files behind message image/audio attachments (app-private storage). */
     val attachmentStore by lazy { AttachmentStore(this) }
     /** Live progress of the in-flight reply, shared with the GenerationService. */
