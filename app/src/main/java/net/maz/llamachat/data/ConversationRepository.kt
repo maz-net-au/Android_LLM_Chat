@@ -9,8 +9,13 @@ import net.maz.llamachat.data.model.Conversation
 /** CRUD over conversations. A fresh install starts with no conversations. */
 class ConversationRepository(private val dao: ConversationDao) {
 
+    /** All listable conversations. The ephemeral "Image to Text" scratch chat is
+     *  stored like any other (the generation pipeline needs it in Room) but never
+     *  shown in the list. */
     val conversations: Flow<List<Conversation>> =
-        dao.observeAll().map { list -> list.map { it.toDomain() } }
+        dao.observeAll().map { list ->
+            list.filter { it.id != Conversation.QUICK_IMAGE_ID }.map { it.toDomain() }
+        }
 
     suspend fun get(id: Long): Conversation? = dao.getById(id)?.toDomain()
 

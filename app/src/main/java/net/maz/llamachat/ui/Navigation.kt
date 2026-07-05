@@ -2,6 +2,7 @@ package net.maz.llamachat.ui
 
 import android.net.Uri
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
@@ -9,7 +10,12 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import net.maz.llamachat.LlamaChatApp
+import net.maz.llamachat.data.gen.GenerationService
+import net.maz.llamachat.data.model.Conversation
 import net.maz.llamachat.ui.characters.CharacterEditScreen
 import net.maz.llamachat.ui.characters.CharacterListScreen
 import net.maz.llamachat.ui.characters.GeneratorScreen
@@ -24,6 +30,9 @@ import net.maz.llamachat.vm.GeneratorViewModel
 import net.maz.llamachat.vm.HomeViewModel
 import net.maz.llamachat.vm.NewConversationViewModel
 import net.maz.llamachat.vm.SettingsViewModel
+
+/** Vision model the "Image to Text" quick chat is pinned to. */
+private const val QUICK_IMAGE_MODEL = "Qwen3.6-VL-27B-NR"
 
 object Routes {
     const val LAUNCHER = "launcher"
@@ -49,8 +58,31 @@ fun LlamaChatNavHost() {
     NavHost(navController = navController, startDestination = Routes.LAUNCHER) {
 
         composable(Routes.LAUNCHER) {
+            val scope = rememberCoroutineScope()
             LauncherScreen(
                 onOpenChat = { navController.navigate(Routes.HOME) },
+                onImageToText = {
+                    // Reset the single scratch conversation so every tile press starts a
+                    // fresh "photo + question" chat, then open it like any other chat.
+                    scope.launch {
+                        val id = Conversation.QUICK_IMAGE_ID
+                        if (app.generation.isActive(id)) GenerationService.cancel(app)
+                        withContext(Dispatchers.IO) { app.attachmentStore.deleteAll(id) }
+                        val now = System.currentTimeMillis()
+                        app.conversationRepository.save(
+                            Conversation(
+                                id = id,
+                                title = "Image to Text",
+                                characterName = "Assistant",
+                                presetName = "Default",
+                                model = QUICK_IMAGE_MODEL,
+                                createdAt = now,
+                                updatedAt = now,
+                            ),
+                        )
+                        navController.navigate(Routes.chat(id))
+                    }
+                },
                 onOpenSettings = openSettings,
             )
         }

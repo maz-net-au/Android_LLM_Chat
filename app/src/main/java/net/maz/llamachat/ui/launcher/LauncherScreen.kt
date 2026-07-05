@@ -46,6 +46,7 @@ import net.maz.llamachat.ui.theme.DcColors
 @Composable
 fun LauncherScreen(
     onOpenChat: () -> Unit,
+    onImageToText: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().background(DcColors.Surface)) {
@@ -61,7 +62,7 @@ fun LauncherScreen(
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 LauncherTile(Icons.Outlined.Forum, "Chat", enabled = true, onClick = onOpenChat)
-                LauncherTile(Icons.Filled.ImageSearch, "Image to Text", enabled = false)
+                LauncherTile(Icons.Filled.ImageSearch, "Image to Text", enabled = true, onClick = onImageToText)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 LauncherTile(Icons.Filled.Image, "Image Generation", enabled = false)

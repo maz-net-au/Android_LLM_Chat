@@ -101,6 +101,13 @@ data class Conversation(
     val contextLimit: Int = 0,
     val messages: List<ChatMessage> = emptyList(),
 ) {
+    companion object {
+        /** Reserved id for the launcher's ephemeral "Image to Text" quick chat: a
+         *  single scratch conversation that is reset on every launch, hidden from
+         *  the conversation list, and stripped of chat-management menu actions. */
+        const val QUICK_IMAGE_ID = -100L
+    }
+
     val character get() = Catalog.character(characterName)
     val preset get() = Catalog.preset(presetName)
 

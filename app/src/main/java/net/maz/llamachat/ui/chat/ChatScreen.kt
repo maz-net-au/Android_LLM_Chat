@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Compress
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EditNote
@@ -82,8 +83,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
@@ -99,6 +102,7 @@ import net.maz.llamachat.LlamaChatApp
 import net.maz.llamachat.data.model.Attachment
 import net.maz.llamachat.data.model.Catalog
 import net.maz.llamachat.data.model.ChatMessage
+import net.maz.llamachat.data.model.Conversation
 import net.maz.llamachat.data.model.Role
 import net.maz.llamachat.ui.components.AppBarMenuItem
 import net.maz.llamachat.ui.components.Avatar
@@ -120,6 +124,10 @@ fun ChatScreen(
     val conv = state.conversation
     val context = LocalContext.current
     val app = context.applicationContext as LlamaChatApp
+    // The launcher's ephemeral "Image to Text" scratch chat: no chat management
+    // (edit details / summarize / delete) and a camera-flavoured empty state.
+    val quickImage = vm.convId == Conversation.QUICK_IMAGE_ID
+    val clipboard = LocalClipboardManager.current
 
     // --- image attachment pickers -------------------------------------------
 
@@ -270,20 +278,24 @@ fun ChatScreen(
                 }
             },
             menuItems = buildList {
-                add(AppBarMenuItem(Icons.Filled.EditNote, "Edit chat details", DcColors.OnSurfaceVariant, DcColors.OnSurface) { conv?.let { onEditDetails(it.id) } })
-                if (state.canSummarize) {
-                    add(AppBarMenuItem(Icons.Filled.Compress, "Summarize & continue", DcColors.OnSurfaceVariant, DcColors.OnSurface, vm::summarize))
+                if (!quickImage) {
+                    add(AppBarMenuItem(Icons.Filled.EditNote, "Edit chat details", DcColors.OnSurfaceVariant, DcColors.OnSurface) { conv?.let { onEditDetails(it.id) } })
+                    if (state.canSummarize) {
+                        add(AppBarMenuItem(Icons.Filled.Compress, "Summarize & continue", DcColors.OnSurfaceVariant, DcColors.OnSurface, vm::summarize))
+                    }
                 }
                 add(AppBarMenuItem(Icons.Filled.FileDownload, "Export conversation", DcColors.OnSurfaceVariant, DcColors.OnSurface) {
                     exportLauncher.launch("${(conv?.title ?: "conversation").ifBlank { "conversation" }}.json")
                 })
-                add(AppBarMenuItem(Icons.Filled.Delete, "Delete conversation", DcColors.Error, DcColors.Error, vm::deleteConversation))
+                if (!quickImage) {
+                    add(AppBarMenuItem(Icons.Filled.Delete, "Delete conversation", DcColors.Error, DcColors.Error, vm::deleteConversation))
+                }
             },
         )
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
             if (messages.isEmpty()) {
-                EmptyChat(character?.name ?: "your assistant")
+                EmptyChat(character?.name ?: "your assistant", quickImage = quickImage)
             } else {
                 LazyColumn(
                     state = listState,
@@ -311,6 +323,17 @@ fun ChatScreen(
                             streamingCaret = state.streaming && index == messages.lastIndex && message.role == Role.ASSISTANT,
                             editText = state.editText,
                             onTap = { vm.toggleSelected(message.id) },
+                            onCopy = {
+                                // Copy what the bubble shows: no "Name:" prefix, and no
+                                // <think> reasoning on assistant replies — just the answer.
+                                val shown = message.displayText(userName, characterName)
+                                val text = if (message.role == Role.ASSISTANT) parseThink(shown).answer else shown
+                                clipboard.setText(AnnotatedString(text))
+                                // Android 13+ shows its own clipboard confirmation overlay.
+                                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                                    Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                                }
+                            },
                             onStartEdit = { vm.startEdit(message.id) },
                             onEditTextChange = vm::setEditText,
                             onSaveEdit = vm::saveEdit,
@@ -488,6 +511,7 @@ private fun MessageItem(
     streamingCaret: Boolean,
     editText: String,
     onTap: () -> Unit,
+    onCopy: () -> Unit,
     onStartEdit: () -> Unit,
     onEditTextChange: (String) -> Unit,
     onSaveEdit: () -> Unit,
@@ -515,7 +539,7 @@ private fun MessageItem(
                 }
                 // Locked (summarized) messages are frozen: no edit/continue/delete.
                 if (selected && !locked) {
-                    SelectedActions(isLastAssistant, onStartEdit, onContinue, onDelete)
+                    SelectedActions(isLastAssistant, onCopy, onStartEdit, onContinue, onDelete)
                 }
             }
         }
@@ -665,8 +689,10 @@ private fun VariantNav(message: ChatMessage, onPrev: () -> Unit, onNext: () -> U
 }
 
 @Composable
-private fun SelectedActions(isLastAssistant: Boolean, onEdit: () -> Unit, onContinue: () -> Unit, onDelete: () -> Unit) {
+private fun SelectedActions(isLastAssistant: Boolean, onCopy: () -> Unit, onEdit: () -> Unit, onContinue: () -> Unit, onDelete: () -> Unit) {
     Row(modifier = Modifier.padding(top = 5.dp)) {
+        ActionChip("Copy", Icons.Filled.ContentCopy, DcColors.OnSurfaceMedium, onCopy)
+        Spacer(Modifier.width(6.dp))
         ActionChip("Edit", Icons.Filled.Edit, DcColors.OnSurfaceMedium, onEdit)
         if (isLastAssistant) {
             Spacer(Modifier.width(6.dp))
@@ -987,7 +1013,7 @@ private fun PendingImagePreview(file: File, onRemove: () -> Unit) {
 }
 
 @Composable
-private fun EmptyChat(characterName: String) {
+private fun EmptyChat(characterName: String, quickImage: Boolean) {
     Column(
         modifier = Modifier.fillMaxSize().padding(30.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -997,9 +1023,19 @@ private fun EmptyChat(characterName: String) {
             contentAlignment = Alignment.Center,
             modifier = Modifier.size(64.dp).background(DcColors.PrimaryContainer, CircleShape),
         ) {
-            Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null, tint = DcColors.Primary, modifier = Modifier.size(32.dp))
+            Icon(
+                if (quickImage) Icons.Filled.PhotoCamera else Icons.Outlined.ChatBubbleOutline,
+                contentDescription = null,
+                tint = DcColors.Primary,
+                modifier = Modifier.size(32.dp),
+            )
         }
-        Text("Say hello to $characterName", fontSize = 15.sp, color = DcColors.OnSurfaceMedium, modifier = Modifier.padding(top = 12.dp))
+        Text(
+            if (quickImage) "Take a photo and ask a question" else "Say hello to $characterName",
+            fontSize = 15.sp,
+            color = DcColors.OnSurfaceMedium,
+            modifier = Modifier.padding(top = 12.dp),
+        )
         // Text("Your messages stay on this network", fontSize = 13.sp, color = DcColors.OnSurfaceFaint, modifier = Modifier.padding(top = 2.dp))
     }
 }
