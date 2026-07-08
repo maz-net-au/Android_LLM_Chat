@@ -25,7 +25,7 @@ data class WorkflowField(
     val nodeTitle: String,
     /** Key inside that node's `inputs` object. */
     val input: String,
-    /** One of [FieldType.wire] — float, int, string, enum, file. */
+    /** One of [FieldType.wire] — float, int, string, bool, seed, enum, file. */
     val type: String,
     /** Display label; falls back to [input] when null. */
     val label: String? = null,
@@ -57,7 +57,10 @@ data class WorkflowOutput(
 
 /** The data types a [WorkflowField] may declare. */
 enum class FieldType(val wire: String) {
-    FLOAT("float"), INT("int"), STRING("string"), ENUM("enum"), FILE("file");
+    FLOAT("float"), INT("int"), STRING("string"), BOOL("bool"),
+    /** Whole number with a "randomize" action; seeded fresh when the form opens. */
+    SEED("seed"),
+    ENUM("enum"), FILE("file");
 
     companion object {
         fun fromWire(wire: String): FieldType? = entries.firstOrNull { it.wire == wire }

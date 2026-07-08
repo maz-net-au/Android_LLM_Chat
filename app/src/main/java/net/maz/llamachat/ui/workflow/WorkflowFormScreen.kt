@@ -18,6 +18,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -105,6 +107,7 @@ fun WorkflowFormScreen(
                 FieldControl(
                     field = field,
                     onValueChange = { vm.setValue(index, it) },
+                    onRandomize = { vm.randomizeSeed(index) },
                     onPickFile = {
                         pickTarget = index
                         when (field.spec.fileKind) {
@@ -158,6 +161,7 @@ fun WorkflowFormScreen(
 private fun FieldControl(
     field: FormField,
     onValueChange: (String) -> Unit,
+    onRandomize: () -> Unit,
     onPickFile: () -> Unit,
 ) {
     when {
@@ -176,6 +180,8 @@ private fun FieldControl(
             modifier = Modifier.fillMaxWidth(),
         )
         field.type == FieldType.FILE -> FilePickerRow(field, onPickFile)
+        field.type == FieldType.BOOL -> BoolSwitchRow(field, onValueChange)
+        field.type == FieldType.SEED -> SeedRow(field, onValueChange, onRandomize)
         else -> DcTextField(
             label = field.label,
             value = field.value,
@@ -190,6 +196,58 @@ private fun FieldControl(
         )
     }
     SupportingText(field)
+}
+
+@Composable
+private fun BoolSwitchRow(field: FormField, onValueChange: (String) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            field.label,
+            color = DcColors.OnSurface,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(1f).padding(end = 12.dp),
+        )
+        Switch(
+            checked = field.value.toBoolean(),
+            onCheckedChange = { onValueChange(it.toString()) },
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = DcColors.Primary,
+            ),
+        )
+    }
+}
+
+@Composable
+private fun SeedRow(
+    field: FormField,
+    onValueChange: (String) -> Unit,
+    onRandomize: () -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        DcTextField(
+            label = field.label,
+            value = field.value,
+            onValueChange = onValueChange,
+            keyboardType = KeyboardType.Number,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(8.dp))
+        Button(
+            onClick = onRandomize,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = DcColors.SurfaceTint,
+                contentColor = DcColors.OnSurface,
+            ),
+            shape = RoundedCornerShape(10.dp),
+        ) {
+            Text("🎲", fontSize = 16.sp)
+        }
+    }
 }
 
 @Composable

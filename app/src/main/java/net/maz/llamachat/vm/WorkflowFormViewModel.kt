@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import kotlin.random.Random
 import net.maz.llamachat.LlamaChatApp
 import net.maz.llamachat.data.IdGen
 import net.maz.llamachat.data.comfy.ComfyJob
@@ -108,9 +109,16 @@ class WorkflowFormViewModel(
                     "Enum list '${spec.optionsRef}' is not installed"
                 else -> null
             }
-            val default = if (type == FieldType.FILE) null
+            val graphDefault = if (type == FieldType.FILE) null
             else WorkflowPatcher.defaultValue(g, spec.nodeTitle, spec.input)?.contentOrNull
-            FormField(spec, type, options, value = default.orEmpty(), configError = configError)
+            val value = when (type) {
+                // Seeds always start fresh so each new form gives a different result.
+                FieldType.SEED -> randomSeed()
+                // Never blank: fall back to unchecked when the graph has no value.
+                FieldType.BOOL -> (graphDefault?.toBoolean() ?: false).toString()
+                else -> graphDefault.orEmpty()
+            }
+            FormField(spec, type, options, value = value, configError = configError)
         }
         _state.update {
             it.copy(
@@ -127,6 +135,9 @@ class WorkflowFormViewModel(
             if (i == index) f.copy(value = value, error = null) else f
         })
     }
+
+    /** Roll a new value into a [FieldType.SEED] field. */
+    fun randomizeSeed(index: Int) = setValue(index, randomSeed())
 
     fun setFile(index: Int, uri: Uri?) = _state.update { s ->
         s.copy(fields = s.fields.mapIndexed { i, f ->
@@ -174,7 +185,8 @@ class WorkflowFormViewModel(
             f.configError != null && mandatory -> f.configError
             f.type == FieldType.FILE -> if (mandatory && f.fileUri == null) "Required" else null
             f.value.isBlank() -> if (mandatory) "Required" else null
-            f.type == FieldType.INT && f.value.trim().toLongOrNull() == null -> "Whole number required"
+            (f.type == FieldType.INT || f.type == FieldType.SEED) &&
+                f.value.trim().toLongOrNull() == null -> "Whole number required"
             f.type == FieldType.FLOAT && f.value.trim().toDoubleOrNull() == null -> "Number required"
             else -> null
         }
@@ -209,8 +221,9 @@ class WorkflowFormViewModel(
                         f.spec.nodeTitle,
                         f.spec.input,
                         when (f.type) {
-                            FieldType.INT -> JsonPrimitive(v.toLong())
+                            FieldType.INT, FieldType.SEED -> JsonPrimitive(v.toLong())
                             FieldType.FLOAT -> JsonPrimitive(v.toDouble())
+                            FieldType.BOOL -> JsonPrimitive(v.toBoolean())
                             else -> JsonPrimitive(f.value)
                         },
                     )
@@ -231,8 +244,13 @@ class WorkflowFormViewModel(
     }
 
     companion object {
+        /** Kept within JSON's safe-integer range (2^53-1) so any tool can read it back. */
+        private const val MAX_SEED = 0x1F_FFFF_FFFF_FFFFL
+
         fun factory(app: LlamaChatApp, workflowId: Long) = viewModelFactory {
             initializer { WorkflowFormViewModel(app, workflowId) }
         }
+
+        private fun randomSeed(): String = Random.nextLong(0, MAX_SEED).toString()
     }
 }
