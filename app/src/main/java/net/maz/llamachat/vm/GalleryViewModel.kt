@@ -14,8 +14,6 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import net.maz.llamachat.LlamaChatApp
-import net.maz.llamachat.data.comfy.ComfyGenerationService
-import net.maz.llamachat.data.comfy.ComfyJob
 import net.maz.llamachat.data.comfy.FlowType
 import net.maz.llamachat.data.db.GalleryItemEntity
 
@@ -34,9 +32,6 @@ class GalleryViewModel(
         .flatMapLatest { app.galleryRepository.observe(it) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    /** Every tracked job (in-flight and recently finished); filtered by tab in the UI. */
-    val jobs: StateFlow<List<ComfyJob>> = app.comfyJobs.jobs
-
     /** One-shot outcome of the last export ("Saved to Pictures/PrivateAI" / error). */
     private val _exportMessage = MutableStateFlow<String?>(null)
     val exportMessage = _exportMessage.asStateFlow()
@@ -48,11 +43,6 @@ class GalleryViewModel(
     fun fileFor(item: GalleryItemEntity): File = app.galleryRepository.store.fileFor(item)
 
     suspend fun getItem(id: Long): GalleryItemEntity? = app.galleryRepository.getById(id)
-
-    fun cancelJob(jobId: Long) = ComfyGenerationService.cancelJob(app, jobId)
-
-    /** Drop a finished/failed job row from the in-progress list. */
-    fun dismissJob(jobId: Long) = app.comfyJobs.remove(jobId)
 
     fun delete(item: GalleryItemEntity, onDeleted: () -> Unit = {}) {
         viewModelScope.launch {

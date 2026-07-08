@@ -21,6 +21,7 @@ import net.maz.llamachat.data.IdGen
 import net.maz.llamachat.data.comfy.ComfyJob
 import net.maz.llamachat.data.comfy.FieldType
 import net.maz.llamachat.data.comfy.FlowType
+import net.maz.llamachat.data.comfy.JobInput
 import net.maz.llamachat.data.comfy.PatchOp
 import net.maz.llamachat.data.comfy.PendingFileInput
 import net.maz.llamachat.data.comfy.PendingSubmission
@@ -65,6 +66,8 @@ data class WorkflowFormUiState(
 class WorkflowFormViewModel(
     private val app: LlamaChatApp,
     private val workflowId: Long,
+    /** When regenerating: the finished job whose values seed the form (-1 = fresh). */
+    private val fromJobId: Long = -1L,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(WorkflowFormUiState())
@@ -98,6 +101,15 @@ class WorkflowFormViewModel(
         outputField = config.output.field
         val base = store.baseEnums()
 
+        // When regenerating, seed each field from the source job's values (except
+        // seeds, which reroll) instead of the graph's baked-in defaults.
+        val prefill: Map<Pair<String, String>, String> = fromJobId
+            .takeIf { it >= 0 }
+            ?.let { id -> app.comfyJobs.jobs.value.firstOrNull { it.id == id } }
+            ?.inputs
+            ?.associate { (it.nodeTitle to it.input) to it.value }
+            ?: emptyMap()
+
         val fields = config.fields.map { spec ->
             val type = FieldType.fromWire(spec.type)
             if (type == null) {
@@ -109,14 +121,15 @@ class WorkflowFormViewModel(
                     "Enum list '${spec.optionsRef}' is not installed"
                 else -> null
             }
+            val prefilled = prefill[spec.nodeTitle to spec.input]
             val graphDefault = if (type == FieldType.FILE) null
             else WorkflowPatcher.defaultValue(g, spec.nodeTitle, spec.input)?.contentOrNull
             val value = when (type) {
                 // Seeds always start fresh so each new form gives a different result.
                 FieldType.SEED -> randomSeed()
                 // Never blank: fall back to unchecked when the graph has no value.
-                FieldType.BOOL -> (graphDefault?.toBoolean() ?: false).toString()
-                else -> graphDefault.orEmpty()
+                FieldType.BOOL -> (prefilled ?: graphDefault?.toBoolean()?.toString() ?: "false")
+                else -> prefilled ?: graphDefault.orEmpty()
             }
             FormField(spec, type, options, value = value, configError = configError)
         }
@@ -201,6 +214,7 @@ class WorkflowFormViewModel(
     ): Pair<ComfyJob, PendingSubmission> {
         val ops = mutableListOf<PatchOp>()
         val fileInputs = mutableListOf<PendingFileInput>()
+        val inputs = mutableListOf<JobInput>()
         st.fields.forEachIndexed { index, f ->
             when (f.type) {
                 FieldType.FILE -> {
@@ -217,6 +231,7 @@ class WorkflowFormViewModel(
                 else -> {
                     val v = f.value.trim()
                     if (v.isEmpty()) return@forEachIndexed // optional, untouched
+                    inputs += JobInput(f.spec.nodeTitle, f.spec.input, f.value)
                     ops += PatchOp(
                         f.spec.nodeTitle,
                         f.spec.input,
@@ -239,6 +254,8 @@ class WorkflowFormViewModel(
             createdAt = System.currentTimeMillis(),
             outputNodeId = outputNodeId,
             outputField = outputField,
+            workflowId = workflowId,
+            inputs = inputs,
         )
         return job to PendingSubmission(jobId, patched, fileInputs)
     }
@@ -247,8 +264,8 @@ class WorkflowFormViewModel(
         /** Kept within JSON's safe-integer range (2^53-1) so any tool can read it back. */
         private const val MAX_SEED = 0x1F_FFFF_FFFF_FFFFL
 
-        fun factory(app: LlamaChatApp, workflowId: Long) = viewModelFactory {
-            initializer { WorkflowFormViewModel(app, workflowId) }
+        fun factory(app: LlamaChatApp, workflowId: Long, fromJobId: Long = -1L) = viewModelFactory {
+            initializer { WorkflowFormViewModel(app, workflowId, fromJobId) }
         }
 
         private fun randomSeed(): String = Random.nextLong(0, MAX_SEED).toString()

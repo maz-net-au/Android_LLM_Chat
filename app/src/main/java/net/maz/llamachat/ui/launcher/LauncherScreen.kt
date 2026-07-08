@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.Queue
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Transform
 import androidx.compose.material.icons.outlined.Forum
@@ -52,6 +53,7 @@ fun LauncherScreen(
     onImageToText: () -> Unit,
     onOpenFlow: (FlowType) -> Unit,
     onOpenGallery: () -> Unit,
+    onOpenQueue: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().background(DcColors.Surface)) {
@@ -93,21 +95,36 @@ fun LauncherScreen(
             }
         }
 
-        Button(
-            onClick = onOpenSettings,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = DcColors.Primary,
-                contentColor = Color.White,
-            ),
-            shape = RoundedCornerShape(10.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-                .height(48.dp),
+        Column(
+            Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.size(8.dp))
-            Text("Settings", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            Button(
+                onClick = onOpenQueue,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = DcColors.SurfaceTint,
+                    contentColor = DcColors.Primary,
+                ),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+            ) {
+                Icon(Icons.Filled.Queue, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.size(8.dp))
+                Text("Queue & History", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            }
+            Button(
+                onClick = onOpenSettings,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = DcColors.Primary,
+                    contentColor = Color.White,
+                ),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+            ) {
+                Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.size(8.dp))
+                Text("Settings", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            }
         }
     }
 }

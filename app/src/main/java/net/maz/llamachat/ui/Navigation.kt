@@ -26,6 +26,7 @@ import net.maz.llamachat.ui.gallery.ViewerScreen
 import net.maz.llamachat.ui.home.HomeScreen
 import net.maz.llamachat.ui.launcher.LauncherScreen
 import net.maz.llamachat.ui.newconv.NewConversationScreen
+import net.maz.llamachat.ui.queue.QueueScreen
 import net.maz.llamachat.ui.settings.SettingsScreen
 import net.maz.llamachat.ui.workflow.WorkflowFormScreen
 import net.maz.llamachat.ui.workflow.WorkflowPickerScreen
@@ -35,6 +36,7 @@ import net.maz.llamachat.vm.GalleryViewModel
 import net.maz.llamachat.vm.GeneratorViewModel
 import net.maz.llamachat.vm.HomeViewModel
 import net.maz.llamachat.vm.NewConversationViewModel
+import net.maz.llamachat.vm.QueueViewModel
 import net.maz.llamachat.vm.SettingsViewModel
 import net.maz.llamachat.vm.WorkflowFormViewModel
 import net.maz.llamachat.vm.WorkflowPickerViewModel
@@ -54,13 +56,15 @@ object Routes {
     const val WORKFLOWS = "workflows"
     const val WORKFLOW_FORM = "workflow_form"
     const val GALLERY = "gallery"
+    const val QUEUE = "queue"
     const val VIEWER = "viewer"
     fun chat(id: Long) = "$CHAT/$id"
     fun newConv(editId: Long? = null) = if (editId == null) NEW else "$NEW?convId=$editId"
     fun editCharacter(name: String? = null) =
         if (name == null) CHARACTER_EDIT else "$CHARACTER_EDIT?name=${Uri.encode(name)}"
     fun workflows(flowType: FlowType) = "$WORKFLOWS/${flowType.key}"
-    fun workflowForm(workflowId: Long) = "$WORKFLOW_FORM/$workflowId"
+    fun workflowForm(workflowId: Long, fromJobId: Long = -1L) =
+        "$WORKFLOW_FORM/$workflowId?fromJob=$fromJobId"
     fun gallery(flowType: FlowType? = null) =
         if (flowType == null) GALLERY else "$GALLERY?flowType=${flowType.key}"
     fun viewer(itemId: Long) = "$VIEWER/$itemId"
@@ -102,6 +106,7 @@ fun LlamaChatNavHost() {
                 },
                 onOpenFlow = { flowType -> navController.navigate(Routes.workflows(flowType)) },
                 onOpenGallery = { navController.navigate(Routes.gallery()) },
+                onOpenQueue = { navController.navigate(Routes.QUEUE) },
                 onOpenSettings = openSettings,
             )
         }
@@ -125,19 +130,23 @@ fun LlamaChatNavHost() {
         }
 
         composable(
-            route = "${Routes.WORKFLOW_FORM}/{workflowId}",
-            arguments = listOf(navArgument("workflowId") { type = NavType.LongType }),
+            route = "${Routes.WORKFLOW_FORM}/{workflowId}?fromJob={jobId}",
+            arguments = listOf(
+                navArgument("workflowId") { type = NavType.LongType },
+                navArgument("jobId") { type = NavType.LongType; defaultValue = -1L },
+            ),
         ) { backStackEntry ->
             val workflowId = backStackEntry.arguments?.getLong("workflowId") ?: return@composable
+            val fromJobId = backStackEntry.arguments?.getLong("jobId") ?: -1L
             val vm: WorkflowFormViewModel =
-                viewModel(factory = WorkflowFormViewModel.factory(app, workflowId))
+                viewModel(factory = WorkflowFormViewModel.factory(app, workflowId, fromJobId))
             WorkflowFormScreen(
                 vm = vm,
-                // Land on the gallery (filtered to the flow type) so the new job's
-                // progress row is immediately visible; back returns to the picker.
-                onSubmitted = { flowType ->
-                    navController.navigate(Routes.gallery(flowType)) {
-                        popUpTo("${Routes.WORKFLOW_FORM}/{workflowId}") { inclusive = true }
+                // Land on the queue so the new job's progress is immediately visible;
+                // back returns to the picker.
+                onSubmitted = {
+                    navController.navigate(Routes.QUEUE) {
+                        popUpTo("${Routes.WORKFLOW_FORM}/{workflowId}?fromJob={jobId}") { inclusive = true }
                     }
                 },
                 onBack = { navController.popBackStack() },
@@ -155,6 +164,18 @@ fun LlamaChatNavHost() {
             GalleryScreen(
                 vm = vm,
                 onOpenItem = { id -> navController.navigate(Routes.viewer(id)) },
+                onBack = { navController.popBackStack() },
+                onOpenSettings = openSettings,
+            )
+        }
+
+        composable(Routes.QUEUE) {
+            val vm: QueueViewModel = viewModel(factory = QueueViewModel.factory(app))
+            QueueScreen(
+                vm = vm,
+                onRegenerate = { job ->
+                    navController.navigate(Routes.workflowForm(job.workflowId, job.id))
+                },
                 onBack = { navController.popBackStack() },
                 onOpenSettings = openSettings,
             )

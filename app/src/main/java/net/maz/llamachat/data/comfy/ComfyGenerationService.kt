@@ -72,6 +72,15 @@ class ComfyGenerationService : Service() {
                     app.comfyJobs.activeJobs().forEach { cancelJob(it.id) }
                 }.invokeOnCompletion { maybeFinish() }
             }
+            ACTION_REMOVE_JOB -> {
+                // Stop it server-side before dropping the row so nothing is left
+                // running that the user can no longer see or cancel.
+                val jobId = intent.getLongExtra(EXTRA_JOB_ID, -1L)
+                scope.launch {
+                    cancelJob(jobId)
+                    app.comfyJobs.remove(jobId)
+                }.invokeOnCompletion { maybeFinish() }
+            }
             else -> maybeFinish()
         }
         // Submitted jobs survive in jobs.json and resume via resumeIfNeeded();
@@ -338,6 +347,7 @@ class ComfyGenerationService : Service() {
         private const val ACTION_START = "net.maz.llamachat.action.START_COMFY"
         private const val ACTION_CANCEL_JOB = "net.maz.llamachat.action.CANCEL_COMFY_JOB"
         private const val ACTION_CANCEL_ALL = "net.maz.llamachat.action.CANCEL_COMFY_ALL"
+        private const val ACTION_REMOVE_JOB = "net.maz.llamachat.action.REMOVE_COMFY_JOB"
         private const val EXTRA_JOB_ID = "jobId"
 
         private val PENDING_FLAGS =
@@ -353,6 +363,14 @@ class ComfyGenerationService : Service() {
         fun cancelJob(context: Context, jobId: Long) {
             val intent = Intent(context, ComfyGenerationService::class.java)
                 .setAction(ACTION_CANCEL_JOB)
+                .putExtra(EXTRA_JOB_ID, jobId)
+            runCatching { context.startService(intent) }
+        }
+
+        /** Cancel (if still active) then drop one job from the ledger entirely. */
+        fun removeJob(context: Context, jobId: Long) {
+            val intent = Intent(context, ComfyGenerationService::class.java)
+                .setAction(ACTION_REMOVE_JOB)
                 .putExtra(EXTRA_JOB_ID, jobId)
             runCatching { context.startService(intent) }
         }

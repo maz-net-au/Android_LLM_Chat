@@ -34,12 +34,22 @@ data class ComfyJob(
     val outputNodeId: String,
     /** Key inside that node's outputs entry, e.g. "images". */
     val outputField: String,
+    /** Installed workflow this came from; -1 when unknown (can't regenerate). */
+    val workflowId: Long = -1L,
+    /** Scalar form values used, so the form can reopen pre-filled to regenerate. */
+    val inputs: List<JobInput> = emptyList(),
     /** Server-side id; null until `POST /prompt` succeeds. */
     val promptId: String? = null,
     val status: ComfyJobStatus = ComfyJobStatus.QUEUED,
     /** Failure reason (FAILED) or progress hint. */
     val message: String? = null,
-)
+) {
+    val canRegenerate: Boolean get() = workflowId >= 0
+}
+
+/** One scalar form value, addressed like [PatchOp], captured for regeneration. */
+@Serializable
+data class JobInput(val nodeTitle: String, val input: String, val value: String)
 
 /** A file input already copied into the pending dir, waiting for upload. */
 @Serializable
