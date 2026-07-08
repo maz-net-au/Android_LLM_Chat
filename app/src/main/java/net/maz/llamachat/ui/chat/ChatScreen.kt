@@ -527,7 +527,10 @@ private fun MessageItem(
         horizontalArrangement = if (editing) Arrangement.Start else if (isUser) Arrangement.End else Arrangement.Start,
     ) {
         Column(
-            modifier = if (editing) Modifier.fillMaxWidth() else Modifier.widthIn(max = 320.dp),
+            // A fraction of the current width (not a fixed dp) so bubbles grow to
+            // use the extra room on rotation / larger windows, capped for readability.
+            modifier = if (editing) Modifier.fillMaxWidth()
+            else Modifier.fillMaxWidth(0.85f).widthIn(max = 600.dp),
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
         ) {
             if (editing) {
