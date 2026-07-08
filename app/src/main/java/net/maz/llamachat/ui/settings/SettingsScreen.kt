@@ -2,6 +2,7 @@ package net.maz.llamachat.ui.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,6 +23,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import net.maz.llamachat.data.net.ProbeStatus
 import net.maz.llamachat.ui.components.DcAppBar
 import net.maz.llamachat.ui.components.DcTextField
 import net.maz.llamachat.ui.components.ServerStatusRow
@@ -101,11 +103,53 @@ fun SettingsScreen(
                 letterSpacing = 0.5.sp,
             )
             Spacer(Modifier.height(4.dp))
-            ServerStatusRow("llama-server", health.llama)
-            ServerStatusRow("ComfyUI", health.comfy)
+            ServerStatusRow("llama-server", health.llama) {
+                UnloadButton(
+                    loading = state.unloadingLlama,
+                    enabled = health.llama == ProbeStatus.UP && !state.unloadingLlama,
+                    onClick = vm::unloadLlama,
+                )
+            }
+            ServerStatusRow("ComfyUI", health.comfy) {
+                UnloadButton(
+                    loading = state.unloadingComfy,
+                    enabled = health.comfy == ProbeStatus.UP && !state.unloadingComfy,
+                    onClick = vm::unloadComfy,
+                )
+            }
+            state.unloadStatus?.let { msg ->
+                Text(
+                    msg,
+                    color = if (state.unloadStatusIsError) DcColors.Error else DcColors.OnSurfaceFaint,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(start = 16.dp, top = 4.dp),
+                )
+            }
 
             Spacer(Modifier.height(28.dp))
             WorkflowSection(vm)
         }
+    }
+}
+
+@Composable
+private fun UnloadButton(loading: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = DcColors.SurfaceTint,
+            contentColor = DcColors.Primary,
+            disabledContainerColor = DcColors.SurfaceTint.copy(alpha = 0.5f),
+            disabledContentColor = DcColors.OnSurfaceFaint,
+        ),
+        shape = RoundedCornerShape(8.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+    ) {
+        Text(
+            if (loading) "Unloading…" else "Unload",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+        )
     }
 }

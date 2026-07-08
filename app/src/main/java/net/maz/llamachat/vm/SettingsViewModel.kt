@@ -29,6 +29,12 @@ data class SettingsUiState(
     /** One-shot outcome of the last workflow/enums action. */
     val workflowStatus: String? = null,
     val workflowStatusIsError: Boolean = false,
+    /** True while an unload request to that server is in flight. */
+    val unloadingLlama: Boolean = false,
+    val unloadingComfy: Boolean = false,
+    /** One-shot result of the last unload action. */
+    val unloadStatus: String? = null,
+    val unloadStatusIsError: Boolean = false,
 )
 
 class SettingsViewModel(private val app: LlamaChatApp) : ViewModel() {
@@ -67,6 +73,44 @@ class SettingsViewModel(private val app: LlamaChatApp) : ViewModel() {
             _state.update { it.copy(saved = true) }
         }
     }
+
+    // ---- unload models / free VRAM ----
+
+    /** Unload every model llama-server has loaded, one after another. */
+    fun unloadLlama() {
+        if (_state.value.unloadingLlama) return
+        _state.update { it.copy(unloadingLlama = true, unloadStatus = null) }
+        viewModelScope.launch {
+            val s = app.settingsRepository.current()
+            app.llamaClient.unloadAllModels(s.ip, s.port)
+                .onSuccess { n ->
+                    setUnload(
+                        if (n == 0) "llama-server: no models were loaded"
+                        else "llama-server: unloaded $n model${if (n == 1) "" else "s"}",
+                        isError = false,
+                    )
+                }
+                .onFailure { setUnload("llama-server: ${it.message ?: "unload failed"}", isError = true) }
+            _state.update { it.copy(unloadingLlama = false) }
+            app.healthMonitor.refreshNow()
+        }
+    }
+
+    /** Ask ComfyUI to unload its models and free VRAM. */
+    fun unloadComfy() {
+        if (_state.value.unloadingComfy) return
+        _state.update { it.copy(unloadingComfy = true, unloadStatus = null) }
+        viewModelScope.launch {
+            val s = app.settingsRepository.current()
+            app.comfyClient.freeMemory(s.ip, s.comfyPort)
+                .onSuccess { setUnload("ComfyUI: models unloaded, memory freed", isError = false) }
+                .onFailure { setUnload("ComfyUI: ${it.message ?: "unload failed"}", isError = true) }
+            _state.update { it.copy(unloadingComfy = false) }
+        }
+    }
+
+    private fun setUnload(message: String, isError: Boolean) =
+        _state.update { it.copy(unloadStatus = message, unloadStatusIsError = isError) }
 
     // ---- ComfyUI workflow management ----
 

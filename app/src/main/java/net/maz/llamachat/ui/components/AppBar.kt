@@ -182,9 +182,15 @@ private fun ServerStatusIndicator(onOpenSettings: (() -> Unit)?) {
 }
 
 @Composable
-fun ServerStatusRow(name: String, status: ProbeStatus) {
+fun ServerStatusRow(
+    name: String,
+    status: ProbeStatus,
+    trailing: (@Composable () -> Unit)? = null,
+) {
     Row(
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier = Modifier
+            .then(if (trailing != null) Modifier.fillMaxWidth() else Modifier)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(8.dp).clip(CircleShape).background(statusDotColor(status)))
@@ -199,5 +205,9 @@ fun ServerStatusRow(name: String, status: ProbeStatus) {
             fontSize = 13.sp,
             color = DcColors.OnSurfaceVariant,
         )
+        if (trailing != null) {
+            Spacer(Modifier.weight(1f))
+            trailing()
+        }
     }
 }

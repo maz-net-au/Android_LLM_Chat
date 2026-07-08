@@ -215,6 +215,24 @@ class ComfyClient {
             }.onFailure { Log.w(TAG, "deleteQueued failed: ${it.message}") }
         }
 
+    /** Ask ComfyUI to unload models and free VRAM (`POST /api/free`). */
+    suspend fun freeMemory(ip: String, port: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val payload = buildJsonObject {
+                    put("unload_models", true)
+                    put("free_memory", true)
+                }
+                val request = Request.Builder()
+                    .url("${base(ip, port)}/api/free")
+                    .post(payload.toString().toRequestBody(jsonMedia))
+                    .build()
+                client.newCall(request).execute().use { resp ->
+                    if (!resp.isSuccessful) error("HTTP ${resp.code}: ${resp.body?.string().orEmpty().take(300)}")
+                }
+            }.onFailure { Log.w(TAG, "freeMemory failed: ${it.message}") }
+        }
+
     private companion object {
         const val TAG = "ComfyClient"
     }

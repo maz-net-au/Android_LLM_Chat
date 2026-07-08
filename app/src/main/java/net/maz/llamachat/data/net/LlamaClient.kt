@@ -7,6 +7,13 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.put
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -67,6 +74,67 @@ class LlamaClient {
                 }
             }
         }
+
+    /**
+     * Fetch the models the server currently has loaded (or is loading) from
+     * `/models`, then unload each in turn via `POST /models/unload`
+     * (`{"model": name}`). Returns how many were unloaded (0 if none were loaded).
+     */
+    suspend fun unloadAllModels(ip: String, port: String): Result<Int> = runCatching {
+        val models = loadedModels(ip, port).getOrThrow()
+        var unloaded = 0
+        for (model in models) {
+            unloadModel(ip, port, model).onSuccess { unloaded++ }
+        }
+        unloaded
+    }
+
+    private suspend fun loadedModels(ip: String, port: String): Result<List<String>> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val request = Request.Builder().url("${base(ip, port)}/models").get().build()
+                client.newCall(request).execute().use { resp ->
+                    val body = resp.body?.string().orEmpty()
+                    if (!resp.isSuccessful) error("HTTP ${resp.code}: ${body.take(300)}")
+                    parseModelIds(json.parseToJsonElement(body))
+                }
+            }.onFailure { Log.w("LlamaClient", "loadedModels failed: ${it.message}") }
+        }
+
+    private suspend fun unloadModel(ip: String, port: String, model: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val payload = buildJsonObject { put("model", model) }
+                val request = Request.Builder()
+                    .url("${base(ip, port)}/models/unload")
+                    .post(payload.toString().toRequestBody(jsonMedia))
+                    .build()
+                client.newCall(request).execute().use { resp ->
+                    if (!resp.isSuccessful) error("HTTP ${resp.code}: ${resp.body?.string().orEmpty().take(300)}")
+                }
+            }.onFailure { Log.w("LlamaClient", "unloadModel('$model') failed: ${it.message}") }
+        }
+
+    /** Pull the ids of models worth unloading out of `/models`. Tolerates OpenAI-style
+     *  `{data:[{id}]}`, a bare array of objects (`id`/`model`/`name`), or plain strings.
+     *  When an entry carries a `status.value`, models the server reports as fully
+     *  `unloaded` are skipped — only loaded / loading ones are returned. */
+    private fun parseModelIds(el: JsonElement): List<String> {
+        val arr = (el as? JsonObject)?.get("data") as? JsonArray ?: el as? JsonArray ?: return emptyList()
+        return arr.mapNotNull { item ->
+            when (item) {
+                is JsonPrimitive -> item.contentOrNull
+                is JsonObject -> {
+                    val id = (item["id"] ?: item["model"] ?: item["name"])
+                        .let { it as? JsonPrimitive }?.contentOrNull
+                    val state = (item["status"] as? JsonObject)?.get("value")
+                        .let { it as? JsonPrimitive }?.contentOrNull
+                    if (state != null && state.equals("unloaded", ignoreCase = true)) null else id
+                }
+                else -> null
+            }
+        }.filter { it.isNotBlank() }.distinct()
+    }
 
     /** Fetch the server's context window size (`n_ctx`) from `/props`, used to show
      *  how full the current conversation is. [model] is appended as `?model=` so a
