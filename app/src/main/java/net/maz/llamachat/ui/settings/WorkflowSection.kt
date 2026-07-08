@@ -9,16 +9,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -33,9 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import net.maz.llamachat.data.RelativeTime
 import net.maz.llamachat.data.comfy.FlowType
-import net.maz.llamachat.data.comfy.InstalledWorkflow
 import net.maz.llamachat.ui.components.DcTextField
 import net.maz.llamachat.ui.theme.DcColors
 import net.maz.llamachat.vm.SettingsViewModel
@@ -48,7 +41,6 @@ import net.maz.llamachat.vm.SettingsViewModel
 @Composable
 fun WorkflowSection(vm: SettingsViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
-    val workflows by vm.workflows.collectAsStateWithLifecycle()
     val baseEnumCount by vm.baseEnumCount.collectAsStateWithLifecycle()
 
     // SAF providers disagree on the mime for zips; accept the usual aliases.
@@ -90,51 +82,6 @@ fun WorkflowSection(vm: SettingsViewModel) {
             fontSize = 13.sp,
             modifier = Modifier.padding(top = 10.dp),
         )
-    }
-
-    if (workflows.isNotEmpty()) {
-        Spacer(Modifier.height(14.dp))
-        var confirmDelete by remember { mutableStateOf<InstalledWorkflow?>(null) }
-        workflows.forEach { wf ->
-            val flowLabel = FlowType.fromKey(wf.flowType)?.label ?: wf.flowType
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(wf.name, color = DcColors.OnSurface, fontSize = 15.sp)
-                    Text(
-                        "$flowLabel · ${RelativeTime.format(wf.installedAt)}",
-                        color = DcColors.OnSurfaceFaint,
-                        fontSize = 12.sp,
-                    )
-                }
-                IconButton(onClick = { confirmDelete = wf }) {
-                    Icon(
-                        Icons.Outlined.Delete,
-                        contentDescription = "Delete ${wf.name}",
-                        tint = DcColors.OnSurfaceFaint,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-            }
-        }
-        confirmDelete?.let { wf ->
-            AlertDialog(
-                onDismissRequest = { confirmDelete = null },
-                title = { Text("Delete workflow?") },
-                text = { Text("'${wf.name}' will be removed. Generated media stays in the gallery.") },
-                confirmButton = {
-                    TextButton(onClick = {
-                        vm.deleteWorkflow(wf)
-                        confirmDelete = null
-                    }) { Text("Delete") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { confirmDelete = null }) { Text("Cancel") }
-                },
-            )
-        }
     }
 
     state.pendingImport?.let { parsed ->

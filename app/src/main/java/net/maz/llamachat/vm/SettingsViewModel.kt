@@ -12,7 +12,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import net.maz.llamachat.LlamaChatApp
 import net.maz.llamachat.data.comfy.FlowType
-import net.maz.llamachat.data.comfy.InstalledWorkflow
 import net.maz.llamachat.data.comfy.ParsedWorkflowZip
 import net.maz.llamachat.data.net.ServerHealth
 
@@ -45,8 +44,7 @@ class SettingsViewModel(private val app: LlamaChatApp) : ViewModel() {
     /** Live probe results, shown as immediate feedback after saving. */
     val health: StateFlow<ServerHealth> = app.healthMonitor.state
 
-    /** Installed ComfyUI workflow packages (the "Media generation" section). */
-    val workflows: StateFlow<List<InstalledWorkflow>> = app.workflowStore.workflows
+    /** Count of installed base enum lists (the "Media generation" section). */
     val baseEnumCount: StateFlow<Int> = app.workflowStore.baseEnumCount
 
     init {
@@ -141,13 +139,6 @@ class SettingsViewModel(private val app: LlamaChatApp) : ViewModel() {
     }
 
     fun cancelImport() = _state.update { it.copy(pendingImport = null, importName = "") }
-
-    fun deleteWorkflow(workflow: InstalledWorkflow) {
-        viewModelScope.launch {
-            app.workflowStore.delete(workflow.id)
-            setStatus("Removed '${workflow.name}'", isError = false)
-        }
-    }
 
     fun importBaseEnums(uri: Uri) {
         viewModelScope.launch {
