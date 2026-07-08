@@ -211,6 +211,7 @@ class ComfyGenerationService : Service() {
             app.comfyClient.download(s.ip, s.comfyPort, ref, dest)
                 .getOrElse { fail(job.id, it.message ?: "Download failed"); return }
             app.galleryRepository.insert(item)
+            controller.linkGalleryItem(item.id, job.id)
         }
         controller.update(job.id) { it.copy(status = ComfyJobStatus.DONE) }
     }

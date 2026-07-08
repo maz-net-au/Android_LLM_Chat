@@ -20,6 +20,9 @@ class QueueViewModel(private val app: LlamaChatApp) : ViewModel() {
         .map { list -> list.sortedByDescending { it.createdAt } }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    /** First gallery item this job produced this session, or null. */
+    fun firstOutput(jobId: Long): Long? = app.comfyJobs.outputsForJob(jobId).firstOrNull()
+
     /** Stop an in-flight job; it stays in the list as a cancelled row. */
     fun cancel(jobId: Long) = ComfyGenerationService.cancelJob(app, jobId)
 

@@ -31,7 +31,25 @@ class ComfyJobController(private val context: Context) {
     private val _jobs = MutableStateFlow(loadJobs())
     val jobs = _jobs.asStateFlow()
 
+    /** Gallery item id -> the job that produced it, for this session only. Lets
+     *  the viewer offer "regenerate" and the queue jump to an output, as long as
+     *  the source job is still around (terminal jobs aren't persisted). */
+    private val itemToJob = java.util.concurrent.ConcurrentHashMap<Long, Long>()
+
     fun activeJobs(): List<ComfyJob> = _jobs.value.filterNot { it.status.isTerminal }
+
+    /** Record that a downloaded gallery item came from [jobId]. */
+    fun linkGalleryItem(itemId: Long, jobId: Long) {
+        itemToJob[itemId] = jobId
+    }
+
+    /** The still-present job that produced [itemId], or null once it's gone. */
+    fun jobForItem(itemId: Long): ComfyJob? =
+        itemToJob[itemId]?.let { jid -> _jobs.value.firstOrNull { it.id == jid } }
+
+    /** Gallery item ids this job produced this session, oldest first. */
+    fun outputsForJob(jobId: Long): List<Long> =
+        itemToJob.filterValues { it == jobId }.keys.sorted()
 
     /** Fresh target for a picked file input, copied here so the service doesn't
      *  depend on the picker's transient content-Uri grant. */
@@ -61,6 +79,7 @@ class ComfyJobController(private val context: Context) {
     fun remove(jobId: Long) {
         mutate { list -> list.filterNot { it.id == jobId } }
         deletePendingFiles(jobId)
+        itemToJob.values.removeAll { it == jobId }
     }
 
     /** Prune finished/failed/cancelled jobs from the list. */

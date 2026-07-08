@@ -1,6 +1,7 @@
 package net.maz.llamachat.ui.queue
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,6 +48,7 @@ import net.maz.llamachat.ui.theme.DcColors
 fun QueueScreen(
     vm: net.maz.llamachat.vm.QueueViewModel,
     onRegenerate: (ComfyJob) -> Unit,
+    onOpenOutput: (Long) -> Unit,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
@@ -66,8 +68,10 @@ fun QueueScreen(
                 modifier = Modifier.fillMaxSize(),
             ) {
                 items(jobs, key = { it.id }) { job ->
+                    val output = if (job.status == ComfyJobStatus.DONE) vm.firstOutput(job.id) else null
                     JobCard(
                         job = job,
+                        onOpen = output?.let { { onOpenOutput(it) } },
                         onCancel = { vm.cancel(job.id) },
                         onRegenerate = { onRegenerate(job) },
                         onRemove = { vm.remove(job) },
@@ -81,6 +85,7 @@ fun QueueScreen(
 @Composable
 private fun JobCard(
     job: ComfyJob,
+    onOpen: (() -> Unit)?,
     onCancel: () -> Unit,
     onRegenerate: () -> Unit,
     onRemove: () -> Unit,
@@ -90,6 +95,7 @@ private fun JobCard(
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(DcColors.SurfaceTint)
+            .then(if (onOpen != null) Modifier.clickable(onClick = onOpen) else Modifier)
             .padding(14.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

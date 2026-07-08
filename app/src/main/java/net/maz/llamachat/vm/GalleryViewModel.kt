@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import net.maz.llamachat.LlamaChatApp
+import net.maz.llamachat.data.comfy.ComfyJob
 import net.maz.llamachat.data.comfy.FlowType
 import net.maz.llamachat.data.db.GalleryItemEntity
 
@@ -43,6 +44,10 @@ class GalleryViewModel(
     fun fileFor(item: GalleryItemEntity): File = app.galleryRepository.store.fileFor(item)
 
     suspend fun getItem(id: Long): GalleryItemEntity? = app.galleryRepository.getById(id)
+
+    /** The job that produced [itemId], if it's still around and can be regenerated. */
+    fun regenerableJob(itemId: Long): ComfyJob? =
+        app.comfyJobs.jobForItem(itemId)?.takeIf { it.canRegenerate }
 
     fun delete(item: GalleryItemEntity, onDeleted: () -> Unit = {}) {
         viewModelScope.launch {

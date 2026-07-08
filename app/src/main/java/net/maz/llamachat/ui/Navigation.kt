@@ -176,6 +176,7 @@ fun LlamaChatNavHost() {
                 onRegenerate = { job ->
                     navController.navigate(Routes.workflowForm(job.workflowId, job.id))
                 },
+                onOpenOutput = { itemId -> navController.navigate(Routes.viewer(itemId)) },
                 onBack = { navController.popBackStack() },
                 onOpenSettings = openSettings,
             )
@@ -190,6 +191,9 @@ fun LlamaChatNavHost() {
             ViewerScreen(
                 vm = vm,
                 itemId = itemId,
+                onRegenerate = { job ->
+                    navController.navigate(Routes.workflowForm(job.workflowId, job.id))
+                },
                 onBack = { navController.popBackStack() },
                 onOpenSettings = openSettings,
             )
