@@ -3,6 +3,7 @@ package net.maz.llamachat.data
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -25,6 +26,11 @@ class SettingsRepository(private val context: Context) {
         val I2T_MODEL = stringPreferencesKey("image_to_text_model")
         val I2T_CHARACTER = stringPreferencesKey("image_to_text_character")
         val I2T_PRESET = stringPreferencesKey("image_to_text_preset")
+        val SUMMARY_MODEL = stringPreferencesKey("summary_model")
+        val SCENE_MODEL = stringPreferencesKey("scene_image_model")
+        val SCENE_WORKFLOW_ID = longPreferencesKey("scene_workflow_id")
+        val SCENE_PROMPT_NODE = stringPreferencesKey("scene_prompt_node_title")
+        val SCENE_PROMPT_INPUT = stringPreferencesKey("scene_prompt_input")
         val USER_NAME = stringPreferencesKey("user_name")
         val SEEDED = booleanPreferencesKey("seeded")
     }
@@ -45,6 +51,16 @@ class SettingsRepository(private val context: Context) {
         val imageToTextCharacter: String,
         /** Sampling preset the "Image to Text" quick chat uses. */
         val imageToTextPreset: String,
+        /** Model the "Summarize & continue" flow uses. Blank = follow the conversation's model. */
+        val summaryModel: String,
+        /** Model that writes scene-image descriptions. Blank = follow the conversation's model. */
+        val sceneImageModel: String,
+        /** Installed ComfyUI t2i workflow used for scene images; -1 = none configured. */
+        val sceneWorkflowId: Long,
+        /** Node `_meta.title` of the scene workflow's prompt field. */
+        val scenePromptNodeTitle: String,
+        /** `inputs` key on that node that receives the generated prompt. */
+        val scenePromptInput: String,
         /** Default name for new conversations' `{{user}}`; the last name the user set. */
         val userName: String,
     )
@@ -60,6 +76,11 @@ class SettingsRepository(private val context: Context) {
             imageToTextModel = prefs[Keys.I2T_MODEL] ?: DEFAULT_I2T_MODEL,
             imageToTextCharacter = prefs[Keys.I2T_CHARACTER] ?: "Assistant",
             imageToTextPreset = prefs[Keys.I2T_PRESET] ?: "Default",
+            summaryModel = prefs[Keys.SUMMARY_MODEL] ?: "",
+            sceneImageModel = prefs[Keys.SCENE_MODEL] ?: "",
+            sceneWorkflowId = prefs[Keys.SCENE_WORKFLOW_ID] ?: -1L,
+            scenePromptNodeTitle = prefs[Keys.SCENE_PROMPT_NODE] ?: "",
+            scenePromptInput = prefs[Keys.SCENE_PROMPT_INPUT] ?: "",
             userName = prefs[Keys.USER_NAME]?.takeIf { it.isNotBlank() } ?: "user",
         )
     }
@@ -98,6 +119,33 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setImageToTextPreset(preset: String) {
         context.dataStore.edit { it[Keys.I2T_PRESET] = preset }
+    }
+
+    /** Pick the model the "Summarize & continue" flow uses. */
+    suspend fun setSummaryModel(model: String) {
+        context.dataStore.edit { it[Keys.SUMMARY_MODEL] = model }
+    }
+
+    /** Pick the model that writes scene-image descriptions. */
+    suspend fun setSceneImageModel(model: String) {
+        context.dataStore.edit { it[Keys.SCENE_MODEL] = model }
+    }
+
+    /** Select the scene-image workflow; changing it clears the stale prompt-field mapping. */
+    suspend fun setSceneWorkflow(id: Long) {
+        context.dataStore.edit {
+            it[Keys.SCENE_WORKFLOW_ID] = id
+            it[Keys.SCENE_PROMPT_NODE] = ""
+            it[Keys.SCENE_PROMPT_INPUT] = ""
+        }
+    }
+
+    /** Choose which of the workflow's string fields receives the generated prompt. */
+    suspend fun setScenePromptField(nodeTitle: String, input: String) {
+        context.dataStore.edit {
+            it[Keys.SCENE_PROMPT_NODE] = nodeTitle
+            it[Keys.SCENE_PROMPT_INPUT] = input
+        }
     }
 
     /** Remember the most recently used name as the default for future conversations. */

@@ -11,8 +11,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import net.maz.llamachat.LlamaChatApp
+import net.maz.llamachat.data.comfy.FieldType
 import net.maz.llamachat.data.comfy.FlowType
+import net.maz.llamachat.data.comfy.InstalledWorkflow
 import net.maz.llamachat.data.comfy.ParsedWorkflowZip
+import net.maz.llamachat.data.comfy.WorkflowField
 import net.maz.llamachat.data.model.Catalog
 import net.maz.llamachat.data.net.ServerHealth
 
@@ -42,6 +45,19 @@ data class SettingsUiState(
     val imageToTextModel: String = "",
     val imageToTextCharacter: String = "",
     val imageToTextPreset: String = "",
+    /** Model the "Summarize & continue" flow uses (effective value, blank shown resolved). */
+    val summaryModel: String = "",
+    /** Model that writes scene-image descriptions (effective value). */
+    val sceneImageModel: String = "",
+    /** Selected scene-image t2i workflow; -1 = none. */
+    val sceneWorkflowId: Long = -1L,
+    /** Display name of that workflow, or blank if none/uninstalled. */
+    val sceneWorkflowName: String = "",
+    /** The string-typed fields of the selected workflow, offered as prompt targets. */
+    val scenePromptFields: List<WorkflowField> = emptyList(),
+    /** The currently-chosen prompt field, addressed by node title + input. */
+    val scenePromptNodeTitle: String = "",
+    val scenePromptInput: String = "",
 )
 
 class SettingsViewModel(private val app: LlamaChatApp) : ViewModel() {
@@ -54,6 +70,10 @@ class SettingsViewModel(private val app: LlamaChatApp) : ViewModel() {
 
     /** Count of installed base enum lists (the "Media generation" section). */
     val baseEnumCount: StateFlow<Int> = app.workflowStore.baseEnumCount
+
+    /** Installed workflows; collected by the settings screen so the scene-image
+     *  pickers recompose when a workflow is imported or deleted. */
+    val workflows: StateFlow<List<InstalledWorkflow>> = app.workflowStore.workflows
 
     /** Character names offered in the picker (the live, user-editable list). */
     fun characterOptions(): List<String> = Catalog.characters.map { it.name }
@@ -69,6 +89,23 @@ class SettingsViewModel(private val app: LlamaChatApp) : ViewModel() {
         return if (current.isNotBlank() && current !in reported) listOf(current) + reported else reported
     }
 
+    /** Installed t2i workflows offered in the scene-image picker (by display name). */
+    fun t2iWorkflowOptions(): List<String> =
+        app.workflowStore.workflows.value
+            .filter { it.flowType == FlowType.TEXT_TO_IMAGE.key }
+            .map { it.name }
+
+    /** Display labels of the selected workflow's string fields (prompt-target picker). */
+    fun scenePromptFieldOptions(): List<String> = _state.value.scenePromptFields.map { it.displayLabel }
+
+    /** Label of the currently-chosen prompt field, or blank if none. */
+    fun scenePromptFieldLabel(): String {
+        val st = _state.value
+        return st.scenePromptFields
+            .firstOrNull { it.nodeTitle == st.scenePromptNodeTitle && it.input == st.scenePromptInput }
+            ?.displayLabel.orEmpty()
+    }
+
     init {
         viewModelScope.launch {
             val s = app.settingsRepository.current()
@@ -81,9 +118,71 @@ class SettingsViewModel(private val app: LlamaChatApp) : ViewModel() {
                     imageToTextModel = s.imageToTextModel,
                     imageToTextCharacter = s.imageToTextCharacter,
                     imageToTextPreset = s.imageToTextPreset,
+                    summaryModel = s.summaryModel.ifEmpty { s.currentModel },
+                    sceneImageModel = s.sceneImageModel.ifEmpty { s.currentModel },
+                    sceneWorkflowId = s.sceneWorkflowId,
+                    sceneWorkflowName = workflowName(s.sceneWorkflowId),
+                    scenePromptNodeTitle = s.scenePromptNodeTitle,
+                    scenePromptInput = s.scenePromptInput,
                 )
             }
+            if (s.sceneWorkflowId >= 0) loadSceneFields(s.sceneWorkflowId)
         }
+    }
+
+    private fun workflowName(id: Long): String =
+        app.workflowStore.workflows.value.firstOrNull { it.id == id }?.name.orEmpty()
+
+    /** Load the workflow's string fields into state (empty on failure / unset). */
+    private suspend fun loadSceneFields(id: Long) {
+        if (id < 0) {
+            _state.update { it.copy(scenePromptFields = emptyList()) }
+            return
+        }
+        val fields = app.workflowStore.loadConfig(id).getOrNull()
+            ?.fields.orEmpty()
+            .filter { it.type == FieldType.STRING.wire }
+        _state.update { it.copy(scenePromptFields = fields) }
+    }
+
+    /** Persist the summary model. */
+    fun setSummaryModel(model: String) {
+        _state.update { it.copy(summaryModel = model) }
+        viewModelScope.launch { app.settingsRepository.setSummaryModel(model) }
+    }
+
+    /** Persist the scene-description model. */
+    fun setSceneImageModel(model: String) {
+        _state.update { it.copy(sceneImageModel = model) }
+        viewModelScope.launch { app.settingsRepository.setSceneImageModel(model) }
+    }
+
+    /** Select the scene-image workflow by display name; resets the prompt field and
+     *  auto-selects when the new workflow has exactly one string field. */
+    fun setSceneWorkflow(name: String) {
+        val wf = app.workflowStore.workflows.value
+            .firstOrNull { it.flowType == FlowType.TEXT_TO_IMAGE.key && it.name == name } ?: return
+        _state.update {
+            it.copy(
+                sceneWorkflowId = wf.id,
+                sceneWorkflowName = wf.name,
+                scenePromptNodeTitle = "",
+                scenePromptInput = "",
+            )
+        }
+        viewModelScope.launch {
+            app.settingsRepository.setSceneWorkflow(wf.id)
+            loadSceneFields(wf.id)
+            val only = _state.value.scenePromptFields.singleOrNull()
+            if (only != null) setScenePromptField(only.displayLabel)
+        }
+    }
+
+    /** Choose the prompt-target field by its display label. */
+    fun setScenePromptField(label: String) {
+        val field = _state.value.scenePromptFields.firstOrNull { it.displayLabel == label } ?: return
+        _state.update { it.copy(scenePromptNodeTitle = field.nodeTitle, scenePromptInput = field.input) }
+        viewModelScope.launch { app.settingsRepository.setScenePromptField(field.nodeTitle, field.input) }
     }
 
     /** Persist the model the character generator should use, immediately. */

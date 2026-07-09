@@ -38,6 +38,8 @@ fun SettingsScreen(
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val health by vm.health.collectAsStateWithLifecycle()
+    // Collected so the scene-image pickers recompose when workflows change.
+    vm.workflows.collectAsStateWithLifecycle()
 
     Column(Modifier.fillMaxSize().background(DcColors.Surface)) {
         DcAppBar(title = "Settings", onBack = onBack)
@@ -178,9 +180,78 @@ fun SettingsScreen(
             )
 
             Spacer(Modifier.height(28.dp))
+            SectionHeader("Conversation summary")
+            Spacer(Modifier.height(12.dp))
+            DcDropdown(
+                label = "Model",
+                value = state.summaryModel,
+                options = vm.modelOptions(state.summaryModel),
+                onSelect = vm::setSummaryModel,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(Modifier.height(28.dp))
+            SectionHeader("Scene images")
+            Spacer(Modifier.height(12.dp))
+            DcDropdown(
+                label = "Description model",
+                value = state.sceneImageModel,
+                options = vm.modelOptions(state.sceneImageModel),
+                onSelect = vm::setSceneImageModel,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(14.dp))
+            val workflowOptions = vm.t2iWorkflowOptions()
+            DcDropdown(
+                label = "Text-to-image workflow",
+                value = state.sceneWorkflowName,
+                options = workflowOptions,
+                onSelect = vm::setSceneWorkflow,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (workflowOptions.isEmpty()) {
+                Text(
+                    "Install a Text to Image workflow below to enable scene images.",
+                    color = DcColors.OnSurfaceFaint,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(start = 12.dp, top = 4.dp),
+                )
+            }
+            Spacer(Modifier.height(14.dp))
+            if (state.sceneWorkflowId >= 0 && state.scenePromptFields.isNotEmpty()) {
+                DcDropdown(
+                    label = "Prompt field",
+                    value = vm.scenePromptFieldLabel(),
+                    options = vm.scenePromptFieldOptions(),
+                    onSelect = vm::setScenePromptField,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else {
+                Text(
+                    if (state.sceneWorkflowId >= 0)
+                        "This workflow exposes no text fields to use as a prompt."
+                    else "Select a workflow to choose which field receives the prompt.",
+                    color = DcColors.OnSurfaceFaint,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(start = 12.dp, top = 2.dp),
+                )
+            }
+
+            Spacer(Modifier.height(28.dp))
             WorkflowSection(vm)
         }
     }
+}
+
+@Composable
+private fun SectionHeader(title: String) {
+    Text(
+        title,
+        color = DcColors.Primary,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 0.5.sp,
+    )
 }
 
 @Composable

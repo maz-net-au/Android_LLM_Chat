@@ -134,7 +134,7 @@ object ChatRequestBuilder {
         )
         val preset = SummarizationConfig.sampling
         return ChatRequest(
-            model = conv.model.ifEmpty { s.currentModel },
+            model = s.summaryModel.ifEmpty { conv.model.ifEmpty { s.currentModel } },
             messages = messages,
             stream = true,
             stop = null,
