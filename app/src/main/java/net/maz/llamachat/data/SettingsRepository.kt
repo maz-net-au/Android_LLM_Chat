@@ -21,6 +21,10 @@ class SettingsRepository(private val context: Context) {
         val COMFY_PORT = stringPreferencesKey("comfy_port")
         val CURRENT_MODEL = stringPreferencesKey("current_model")
         val CURRENT_PRESET = stringPreferencesKey("current_preset")
+        val CHARACTER_GEN_MODEL = stringPreferencesKey("character_gen_model")
+        val I2T_MODEL = stringPreferencesKey("image_to_text_model")
+        val I2T_CHARACTER = stringPreferencesKey("image_to_text_character")
+        val I2T_PRESET = stringPreferencesKey("image_to_text_preset")
         val USER_NAME = stringPreferencesKey("user_name")
         val SEEDED = booleanPreferencesKey("seeded")
     }
@@ -33,6 +37,14 @@ class SettingsRepository(private val context: Context) {
         val currentModel: String,
         /** Last selected preset; the default for new conversations. */
         val currentPreset: String,
+        /** Model used by the "Generate a character" flow. Blank = follow [currentModel]. */
+        val characterGenModel: String,
+        /** Vision model the launcher's "Image to Text" quick chat is pinned to. */
+        val imageToTextModel: String,
+        /** Character (system persona) the "Image to Text" quick chat uses. */
+        val imageToTextCharacter: String,
+        /** Sampling preset the "Image to Text" quick chat uses. */
+        val imageToTextPreset: String,
         /** Default name for new conversations' `{{user}}`; the last name the user set. */
         val userName: String,
     )
@@ -44,6 +56,10 @@ class SettingsRepository(private val context: Context) {
             comfyPort = prefs[Keys.COMFY_PORT] ?: "8188",
             currentModel = prefs[Keys.CURRENT_MODEL] ?: Catalog.fallbackModels.first(),
             currentPreset = prefs[Keys.CURRENT_PRESET] ?: Catalog.presets.first().name,
+            characterGenModel = prefs[Keys.CHARACTER_GEN_MODEL] ?: "",
+            imageToTextModel = prefs[Keys.I2T_MODEL] ?: DEFAULT_I2T_MODEL,
+            imageToTextCharacter = prefs[Keys.I2T_CHARACTER] ?: "Assistant",
+            imageToTextPreset = prefs[Keys.I2T_PRESET] ?: "Default",
             userName = prefs[Keys.USER_NAME]?.takeIf { it.isNotBlank() } ?: "user",
         )
     }
@@ -67,6 +83,23 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.CURRENT_PRESET] = preset }
     }
 
+    /** Pick the model the "Generate a character" flow uses; blank follows [Settings.currentModel]. */
+    suspend fun setCharacterGenModel(model: String) {
+        context.dataStore.edit { it[Keys.CHARACTER_GEN_MODEL] = model }
+    }
+
+    suspend fun setImageToTextModel(model: String) {
+        context.dataStore.edit { it[Keys.I2T_MODEL] = model }
+    }
+
+    suspend fun setImageToTextCharacter(character: String) {
+        context.dataStore.edit { it[Keys.I2T_CHARACTER] = character }
+    }
+
+    suspend fun setImageToTextPreset(preset: String) {
+        context.dataStore.edit { it[Keys.I2T_PRESET] = preset }
+    }
+
     /** Remember the most recently used name as the default for future conversations. */
     suspend fun setUserName(name: String) {
         context.dataStore.edit { it[Keys.USER_NAME] = name }
@@ -76,5 +109,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun markSeeded() {
         context.dataStore.edit { it[Keys.SEEDED] = true }
+    }
+
+    companion object {
+        /** Vision model the "Image to Text" quick chat defaults to. */
+        const val DEFAULT_I2T_MODEL = "Qwen3.6-VL-27B-NR"
     }
 }

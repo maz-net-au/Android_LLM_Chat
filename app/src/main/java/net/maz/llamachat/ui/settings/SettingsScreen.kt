@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import net.maz.llamachat.data.net.ProbeStatus
 import net.maz.llamachat.ui.components.DcAppBar
+import net.maz.llamachat.ui.components.DcDropdown
 import net.maz.llamachat.ui.components.DcTextField
 import net.maz.llamachat.ui.components.ServerStatusRow
 import net.maz.llamachat.ui.theme.DcColors
@@ -125,6 +126,56 @@ fun SettingsScreen(
                     modifier = Modifier.padding(start = 16.dp, top = 4.dp),
                 )
             }
+
+            Spacer(Modifier.height(28.dp))
+            Text(
+                "Character generation",
+                color = DcColors.Primary,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.5.sp,
+            )
+            Spacer(Modifier.height(12.dp))
+            DcDropdown(
+                label = "Model",
+                value = state.characterGenModel,
+                options = vm.modelOptions(state.characterGenModel),
+                onSelect = vm::setCharacterGenModel,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(Modifier.height(28.dp))
+            Text(
+                "Image to text",
+                color = DcColors.Primary,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.5.sp,
+            )
+            Spacer(Modifier.height(12.dp))
+            DcDropdown(
+                label = "Model",
+                value = state.imageToTextModel,
+                options = vm.modelOptions(state.imageToTextModel),
+                onSelect = vm::setImageToTextModel,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(14.dp))
+            DcDropdown(
+                label = "Character",
+                value = state.imageToTextCharacter,
+                options = vm.characterOptions(),
+                onSelect = vm::setImageToTextCharacter,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(14.dp))
+            DcDropdown(
+                label = "Preset",
+                value = state.imageToTextPreset,
+                options = vm.presetOptions(),
+                onSelect = vm::setImageToTextPreset,
+                modifier = Modifier.fillMaxWidth(),
+            )
 
             Spacer(Modifier.height(28.dp))
             WorkflowSection(vm)

@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 import net.maz.llamachat.LlamaChatApp
 import net.maz.llamachat.data.comfy.FlowType
 import net.maz.llamachat.data.comfy.ParsedWorkflowZip
+import net.maz.llamachat.data.model.Catalog
 import net.maz.llamachat.data.net.ServerHealth
 
 data class SettingsUiState(
@@ -34,6 +35,13 @@ data class SettingsUiState(
     /** One-shot result of the last unload action. */
     val unloadStatus: String? = null,
     val unloadStatusIsError: Boolean = false,
+    /** Model the "Generate a character" flow uses; the effective value (a blank
+     *  stored setting is shown resolved to the current chat model). */
+    val characterGenModel: String = "",
+    /** Model / character / preset the launcher's "Image to Text" quick chat uses. */
+    val imageToTextModel: String = "",
+    val imageToTextCharacter: String = "",
+    val imageToTextPreset: String = "",
 )
 
 class SettingsViewModel(private val app: LlamaChatApp) : ViewModel() {
@@ -47,11 +55,56 @@ class SettingsViewModel(private val app: LlamaChatApp) : ViewModel() {
     /** Count of installed base enum lists (the "Media generation" section). */
     val baseEnumCount: StateFlow<Int> = app.workflowStore.baseEnumCount
 
+    /** Character names offered in the picker (the live, user-editable list). */
+    fun characterOptions(): List<String> = Catalog.characters.map { it.name }
+
+    /** Preset names offered in the picker. */
+    fun presetOptions(): List<String> = Catalog.presets.map { it.name }
+
+    /** Models the server reported, falling back to the built-in list when offline.
+     *  [current] is unioned in so the active selection is always pickable even if
+     *  the server isn't reporting it right now. */
+    fun modelOptions(current: String): List<String> {
+        val reported = health.value.models.ifEmpty { Catalog.fallbackModels }
+        return if (current.isNotBlank() && current !in reported) listOf(current) + reported else reported
+    }
+
     init {
         viewModelScope.launch {
             val s = app.settingsRepository.current()
-            _state.update { it.copy(ip = s.ip, llamaPort = s.port, comfyPort = s.comfyPort) }
+            _state.update {
+                it.copy(
+                    ip = s.ip,
+                    llamaPort = s.port,
+                    comfyPort = s.comfyPort,
+                    characterGenModel = s.characterGenModel.ifEmpty { s.currentModel },
+                    imageToTextModel = s.imageToTextModel,
+                    imageToTextCharacter = s.imageToTextCharacter,
+                    imageToTextPreset = s.imageToTextPreset,
+                )
+            }
         }
+    }
+
+    /** Persist the model the character generator should use, immediately. */
+    fun setCharacterGenModel(model: String) {
+        _state.update { it.copy(characterGenModel = model) }
+        viewModelScope.launch { app.settingsRepository.setCharacterGenModel(model) }
+    }
+
+    fun setImageToTextModel(model: String) {
+        _state.update { it.copy(imageToTextModel = model) }
+        viewModelScope.launch { app.settingsRepository.setImageToTextModel(model) }
+    }
+
+    fun setImageToTextCharacter(character: String) {
+        _state.update { it.copy(imageToTextCharacter = character) }
+        viewModelScope.launch { app.settingsRepository.setImageToTextCharacter(character) }
+    }
+
+    fun setImageToTextPreset(preset: String) {
+        _state.update { it.copy(imageToTextPreset = preset) }
+        viewModelScope.launch { app.settingsRepository.setImageToTextPreset(preset) }
     }
 
     fun setIp(v: String) = _state.update { it.copy(ip = v, saved = false) }

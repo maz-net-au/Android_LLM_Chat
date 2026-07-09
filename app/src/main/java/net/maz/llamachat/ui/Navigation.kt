@@ -41,9 +41,6 @@ import net.maz.llamachat.vm.SettingsViewModel
 import net.maz.llamachat.vm.WorkflowFormViewModel
 import net.maz.llamachat.vm.WorkflowPickerViewModel
 
-/** Vision model the "Image to Text" quick chat is pinned to. */
-private const val QUICK_IMAGE_MODEL = "Qwen3.6-VL-27B-NR"
-
 object Routes {
     const val LAUNCHER = "launcher"
     const val SETTINGS = "settings"
@@ -89,14 +86,15 @@ fun LlamaChatNavHost() {
                         val id = Conversation.QUICK_IMAGE_ID
                         if (app.generation.isActive(id)) GenerationService.cancel(app)
                         withContext(Dispatchers.IO) { app.attachmentStore.deleteAll(id) }
+                        val s = app.settingsRepository.current()
                         val now = System.currentTimeMillis()
                         app.conversationRepository.save(
                             Conversation(
                                 id = id,
                                 title = "Image to Text",
-                                characterName = "Assistant",
-                                presetName = "Default",
-                                model = QUICK_IMAGE_MODEL,
+                                characterName = s.imageToTextCharacter,
+                                presetName = s.imageToTextPreset,
+                                model = s.imageToTextModel,
                                 createdAt = now,
                                 updatedAt = now,
                             ),

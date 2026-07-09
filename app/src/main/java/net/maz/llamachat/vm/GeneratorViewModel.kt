@@ -74,7 +74,8 @@ class GeneratorViewModel(
         _state.update { it.copy(phase = GenPhase.GENERATING, error = null) }
         job = viewModelScope.launch {
             val s = settings.current()
-            val request = CharacterGenerator.request(seed, s.currentModel)
+            val model = s.characterGenModel.ifEmpty { s.currentModel }
+            val request = CharacterGenerator.request(seed, model)
             val sb = StringBuilder()
             runCatching {
                 client.streamChat(s.ip, s.port, request).collect { sb.append(it) }
