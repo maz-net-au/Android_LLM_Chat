@@ -21,6 +21,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -41,6 +42,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
@@ -61,6 +63,7 @@ import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -68,6 +71,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -99,11 +103,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import net.maz.llamachat.LlamaChatApp
+import net.maz.llamachat.data.comfy.ComfyJobStatus
 import net.maz.llamachat.data.model.Attachment
 import net.maz.llamachat.data.model.Catalog
 import net.maz.llamachat.data.model.ChatMessage
 import net.maz.llamachat.data.model.Conversation
 import net.maz.llamachat.data.model.Role
+import net.maz.llamachat.data.model.SceneImageMeta
 import net.maz.llamachat.ui.components.AppBarMenuItem
 import net.maz.llamachat.ui.components.Avatar
 import net.maz.llamachat.ui.components.DcAppBar
@@ -119,6 +125,7 @@ fun ChatScreen(
     onBack: () -> Unit,
     onEditDetails: (Long) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenSceneImage: (Long) -> Unit = {},
 ) {
     val state by vm.ui.collectAsStateWithLifecycle()
     val conv = state.conversation
@@ -241,9 +248,22 @@ fun ChatScreen(
     val userName = conv?.userName ?: "You"
     val characterName = conv?.characterName ?: ""
     val firstUnlockedIndex = messages.indexOfFirst { !it.locked }
-    val lastAssistantIndex = messages.indexOfLast { it.role == Role.ASSISTANT }
-    val lastIsAssistant = messages.lastOrNull()?.role == Role.ASSISTANT
+    // Scene images are local-only placeholders, not part of the transcript — the reply
+    // actions (Regenerate/Impersonate) target the last *real* assistant message.
+    val lastAssistantIndex = messages.indexOfLast { it.role == Role.ASSISTANT && !it.isSceneImage }
+    val lastIsAssistant = messages.lastOrNull { !it.isSceneImage }?.role == Role.ASSISTANT
     val showActions = state.streaming || lastIsAssistant
+
+    // Focus prompt for a new scene image.
+    var sceneFocus by rememberSaveable { mutableStateOf<String?>(null) }
+    sceneFocus?.let { focus ->
+        SceneFocusDialog(
+            value = focus,
+            onValueChange = { sceneFocus = it },
+            onDismiss = { sceneFocus = null },
+            onGenerate = { vm.generateSceneImage(focus); sceneFocus = null },
+        )
+    }
 
     val listState = rememberLazyListState()
     // Re-pin to the bottom of the latest message on new content (so a streaming
@@ -311,6 +331,19 @@ fun ChatScreen(
                         ) {
                             SummarizedDivider()
                         }
+                        if (message.isSceneImage) {
+                            SceneImageItem(
+                                message = message,
+                                file = message.attachments.firstOrNull()
+                                    ?.let { app.attachmentStore.fileFor(vm.convId, it) },
+                                describing = message.id in state.describingSceneIds,
+                                jobPhase = state.sceneJobPhases[message.id],
+                                onOpen = { onOpenSceneImage(message.id) },
+                                onRetry = { vm.retryScene(message.id) },
+                                onDelete = { vm.deleteSceneMessage(message.id) },
+                            )
+                            return@itemsIndexed
+                        }
                         MessageItem(
                             message = message,
                             attachmentFiles = message.attachments.map { it to app.attachmentStore.fileFor(vm.convId, it) },
@@ -376,12 +409,14 @@ fun ChatScreen(
             sendEnabled = !state.streaming && !state.impersonating && !state.summarizing,
             canAttachImage = state.canAttachImage,
             canRecordAudio = state.canRecordAudio,
+            sceneImageEnabled = state.sceneImageEnabled,
             recording = state.recording,
             pendingImageFile = state.pendingImage?.let { app.attachmentStore.fileFor(vm.convId, it) },
             onInputChange = vm::setInput,
             onSend = vm::send,
             onPickGallery = ::pickGallery,
             onTakePhoto = ::takePhoto,
+            onSceneImage = { sceneFocus = "" },
             onRemovePendingImage = vm::removePendingImage,
             onStartRecording = ::startRecording,
             onStopRecording = { vm.stopRecording() },
@@ -814,12 +849,14 @@ private fun InputBar(
     sendEnabled: Boolean,
     canAttachImage: Boolean,
     canRecordAudio: Boolean,
+    sceneImageEnabled: Boolean,
     recording: Boolean,
     pendingImageFile: File?,
     onInputChange: (String) -> Unit,
     onSend: () -> Unit,
     onPickGallery: () -> Unit,
     onTakePhoto: () -> Unit,
+    onSceneImage: () -> Unit,
     onRemovePendingImage: () -> Unit,
     onStartRecording: () -> Unit,
     onStopRecording: () -> Unit,
@@ -836,8 +873,15 @@ private fun InputBar(
         modifier = Modifier.fillMaxWidth().border(0.dp, Color.Transparent).padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 10.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
-        if (canAttachImage) {
-            AttachButton(enabled = sendEnabled, onPickGallery = onPickGallery, onTakePhoto = onTakePhoto)
+        if (canAttachImage || sceneImageEnabled) {
+            AttachButton(
+                enabled = sendEnabled,
+                canAttachImage = canAttachImage,
+                sceneImageEnabled = sceneImageEnabled,
+                onPickGallery = onPickGallery,
+                onTakePhoto = onTakePhoto,
+                onSceneImage = onSceneImage,
+            )
             Spacer(Modifier.width(8.dp))
         }
         Column(
@@ -960,9 +1004,17 @@ private fun RecordingIndicator() {
     }
 }
 
-/** The (+) button shown for vision models, with the gallery/camera chooser. */
+/** The (+) button: image attach (vision models) and/or "Scene image" (when a
+ *  text-to-image workflow is configured). */
 @Composable
-private fun AttachButton(enabled: Boolean, onPickGallery: () -> Unit, onTakePhoto: () -> Unit) {
+private fun AttachButton(
+    enabled: Boolean,
+    canAttachImage: Boolean,
+    sceneImageEnabled: Boolean,
+    onPickGallery: () -> Unit,
+    onTakePhoto: () -> Unit,
+    onSceneImage: () -> Unit,
+) {
     var menuOpen by remember { mutableStateOf(false) }
     Box {
         Box(
@@ -972,19 +1024,28 @@ private fun AttachButton(enabled: Boolean, onPickGallery: () -> Unit, onTakePhot
                 .background(DcColors.SurfaceTint, CircleShape)
                 .clickable(enabled = enabled) { menuOpen = true },
         ) {
-            Icon(Icons.Filled.Add, contentDescription = "Attach image", tint = DcColors.Primary, modifier = Modifier.size(24.dp))
+            Icon(Icons.Filled.Add, contentDescription = "Attach", tint = DcColors.Primary, modifier = Modifier.size(24.dp))
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-            DropdownMenuItem(
-                text = { Text("Choose from gallery", fontSize = 14.sp, color = DcColors.OnSurface) },
-                leadingIcon = { Icon(Icons.Filled.Image, contentDescription = null, tint = DcColors.OnSurfaceVariant, modifier = Modifier.size(19.dp)) },
-                onClick = { menuOpen = false; onPickGallery() },
-            )
-            DropdownMenuItem(
-                text = { Text("Take photo", fontSize = 14.sp, color = DcColors.OnSurface) },
-                leadingIcon = { Icon(Icons.Filled.PhotoCamera, contentDescription = null, tint = DcColors.OnSurfaceVariant, modifier = Modifier.size(19.dp)) },
-                onClick = { menuOpen = false; onTakePhoto() },
-            )
+            if (canAttachImage) {
+                DropdownMenuItem(
+                    text = { Text("Choose from gallery", fontSize = 14.sp, color = DcColors.OnSurface) },
+                    leadingIcon = { Icon(Icons.Filled.Image, contentDescription = null, tint = DcColors.OnSurfaceVariant, modifier = Modifier.size(19.dp)) },
+                    onClick = { menuOpen = false; onPickGallery() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Take photo", fontSize = 14.sp, color = DcColors.OnSurface) },
+                    leadingIcon = { Icon(Icons.Filled.PhotoCamera, contentDescription = null, tint = DcColors.OnSurfaceVariant, modifier = Modifier.size(19.dp)) },
+                    onClick = { menuOpen = false; onTakePhoto() },
+                )
+            }
+            if (sceneImageEnabled) {
+                DropdownMenuItem(
+                    text = { Text("Scene image", fontSize = 14.sp, color = DcColors.OnSurface) },
+                    leadingIcon = { Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = DcColors.OnSurfaceVariant, modifier = Modifier.size(19.dp)) },
+                    onClick = { menuOpen = false; onSceneImage() },
+                )
+            }
         }
     }
 }
@@ -1013,6 +1074,160 @@ private fun PendingImagePreview(file: File, onRemove: () -> Unit) {
             Icon(Icons.Filled.Close, contentDescription = "Remove image", tint = DcColors.Surface, modifier = Modifier.size(12.dp))
         }
     }
+}
+
+/**
+ * A scene-image placeholder in the transcript: a progress card while the model
+ * describes the scene and ComfyUI renders it, an error card with Retry/Delete on
+ * failure, or the finished image (tap to open the zoomable viewer). Left-aligned
+ * like an assistant message; never sent to the model.
+ */
+@Composable
+private fun SceneImageItem(
+    message: ChatMessage,
+    file: File?,
+    describing: Boolean,
+    jobPhase: ComfyJobStatus?,
+    onOpen: () -> Unit,
+    onRetry: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val meta = message.sceneImage ?: return
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+        horizontalArrangement = Arrangement.Start,
+    ) {
+        Column(Modifier.fillMaxWidth(0.85f).widthIn(max = 600.dp)) {
+            when {
+                meta.status == SceneImageMeta.STATUS_DONE && file != null && file.exists() -> {
+                    AsyncImage(
+                        model = file,
+                        contentDescription = "Scene image: ${meta.focus}",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .widthIn(max = 320.dp)
+                            .heightIn(max = 320.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable(onClick = onOpen),
+                    )
+                }
+                meta.status == SceneImageMeta.STATUS_DONE -> SceneImageCard {
+                    // Bytes are gone (e.g. an imported backup) — offer regenerate/delete.
+                    SceneCardHeader(Icons.Filled.Image, "Image unavailable", DcColors.OnSurfaceMedium)
+                    if (meta.focus.isNotBlank()) SceneFocusLabel(meta.focus)
+                    SceneCardActions(onRetry, onDelete)
+                }
+                meta.status == SceneImageMeta.STATUS_FAILED -> SceneImageCard {
+                    SceneCardHeader(Icons.Filled.Warning, "Scene image failed", DcColors.Error)
+                    Text(
+                        meta.error.ifBlank { "Something went wrong." },
+                        fontSize = 12.sp,
+                        color = DcColors.OnSurfaceFaint,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                    SceneCardActions(onRetry, onDelete)
+                }
+                else -> SceneImageCard {
+                    val label = when {
+                        describing || meta.status == SceneImageMeta.STATUS_DESCRIBING -> "Describing scene…"
+                        jobPhase == ComfyJobStatus.QUEUED -> "Queued"
+                        jobPhase == ComfyJobStatus.DOWNLOADING -> "Downloading…"
+                        else -> "Generating image…"
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(color = DcColors.Primary, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = DcColors.OnSurface)
+                    }
+                    if (meta.focus.isNotBlank()) SceneFocusLabel(meta.focus)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SceneImageCard(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(DcColors.SurfaceTint, RoundedCornerShape(12.dp))
+            .padding(14.dp),
+        content = content,
+    )
+}
+
+@Composable
+private fun SceneCardHeader(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, color: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(17.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(text, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = color)
+    }
+}
+
+@Composable
+private fun SceneFocusLabel(focus: String) {
+    Text(
+        "Focus: $focus",
+        fontSize = 12.sp,
+        color = DcColors.OnSurfaceFaint,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.padding(top = 6.dp),
+    )
+}
+
+@Composable
+private fun SceneCardActions(onRetry: () -> Unit, onDelete: () -> Unit) {
+    Row(modifier = Modifier.padding(top = 10.dp)) {
+        ActionChip("Regenerate", Icons.Filled.Refresh, DcColors.Primary, onRetry)
+        Spacer(Modifier.width(6.dp))
+        ActionChip("Delete", Icons.Filled.Delete, DcColors.Error, onDelete)
+    }
+}
+
+/** Asks for the focus of a new scene image before generation starts. */
+@Composable
+private fun SceneFocusDialog(
+    value: String,
+    onValueChange: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onGenerate: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Scene image", color = DcColors.OnSurface) },
+        text = {
+            Column {
+                Text("What should the image focus on?", fontSize = 13.sp, color = DcColors.OnSurfaceMedium)
+                Spacer(Modifier.height(10.dp))
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(DcColors.SurfaceTint, RoundedCornerShape(10.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                ) {
+                    BasicTextField(
+                        value = value,
+                        onValueChange = onValueChange,
+                        textStyle = LocalTextStyle.current.copy(fontSize = 15.sp, color = DcColors.OnSurface),
+                        cursorBrush = SolidColor(DcColors.Primary),
+                        modifier = Modifier.fillMaxWidth(),
+                        decorationBox = { inner ->
+                            if (value.isEmpty()) Text("e.g. the campfire, her face…", color = DcColors.OnSurfaceFaint, fontSize = 15.sp)
+                            inner()
+                        },
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onGenerate) { Text("Generate", color = DcColors.Primary) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = DcColors.OnSurfaceVariant) } },
+        containerColor = DcColors.Surface,
+    )
 }
 
 @Composable

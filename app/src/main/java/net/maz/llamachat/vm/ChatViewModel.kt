@@ -23,9 +23,13 @@ import net.maz.llamachat.data.ConversationRepository
 import net.maz.llamachat.data.IdGen
 import net.maz.llamachat.data.attach.WavRecorder
 import net.maz.llamachat.data.backup.BackupCodec
+import net.maz.llamachat.data.comfy.ComfyGenerationService
+import net.maz.llamachat.data.comfy.ComfyJob
+import net.maz.llamachat.data.comfy.ComfyJobStatus
 import net.maz.llamachat.data.gen.ChatRequestBuilder
 import net.maz.llamachat.data.gen.GenerationController
 import net.maz.llamachat.data.gen.GenerationService
+import net.maz.llamachat.data.gen.SceneImageService
 import net.maz.llamachat.data.gen.SummarizationConfig
 import net.maz.llamachat.data.gen.SummarizationController
 import net.maz.llamachat.data.gen.SummarizationService
@@ -35,6 +39,7 @@ import net.maz.llamachat.data.model.ChatMessage
 import net.maz.llamachat.data.model.Conversation
 import net.maz.llamachat.data.model.ModelCapabilities
 import net.maz.llamachat.data.model.Role
+import net.maz.llamachat.data.model.SceneImageMeta
 
 data class ChatUiState(
     val loaded: Boolean = false,
@@ -73,6 +78,12 @@ data class ChatUiState(
     val canRecordAudio: Boolean = false,
     /** True while the mic button is held and audio is being captured. */
     val recording: Boolean = false,
+    /** True when a scene-image workflow + prompt field are configured (enables the menu item). */
+    val sceneImageEnabled: Boolean = false,
+    /** Live ComfyUI phase of each scene-image placeholder in this chat, by message id. */
+    val sceneJobPhases: Map<Long, ComfyJobStatus> = emptyMap(),
+    /** Scene-image placeholders whose LLM describe step is running right now. */
+    val describingSceneIds: Set<Long> = emptySet(),
 )
 
 /**
@@ -159,10 +170,22 @@ class ChatViewModel(
             // Attachment affordances follow the model actually used for requests:
             // the conversation's own, falling back to the persisted current model.
             val model = state.conversation?.model?.takeIf { it.isNotEmpty() } ?: s.currentModel
+            val sceneEnabled = s.sceneWorkflowId >= 0 &&
+                s.scenePromptNodeTitle.isNotBlank() && s.scenePromptInput.isNotBlank() &&
+                app.workflowStore.workflows.value.any { it.id == s.sceneWorkflowId }
             state.copy(
                 canAttachImage = ModelCapabilities.supportsImages(model),
                 canRecordAudio = ModelCapabilities.supportsAudio(model),
+                sceneImageEnabled = sceneEnabled,
             )
+        }.combine(app.comfyJobs.jobs) { state, jobs ->
+            // Live phase of this chat's scene-image jobs, so placeholders can show progress.
+            val phases = jobs
+                .filter { it.destination == ComfyJob.DEST_CHAT && it.convId == convId }
+                .associate { it.messageId to it.status }
+            state.copy(sceneJobPhases = phases)
+        }.combine(app.sceneImages.describing) { state, describing ->
+            state.copy(describingSceneIds = describing)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
     init {
@@ -349,7 +372,7 @@ class ChatViewModel(
     fun regenerate() {
         if (isBusy()) return
         val conv = base ?: return
-        val last = conv.messages.lastOrNull { it.role == Role.ASSISTANT } ?: return
+        val last = conv.messages.lastOrNull { it.role == Role.ASSISTANT && !it.isSceneImage } ?: return
         val prefixes = conv.character.usesNamePrefixes
         val updated = conv.copy(
             updatedAt = System.currentTimeMillis(),
@@ -445,7 +468,7 @@ class ChatViewModel(
     fun startEdit(id: Long) {
         val conv = base ?: return
         val m = conv.messages.firstOrNull { it.id == id } ?: return
-        if (m.locked) return // summarized messages are frozen
+        if (m.locked || m.isSceneImage) return // summarized messages are frozen; scene images aren't text
         // Edit the text without its "Name:" prefix; remember the exact prefix to re-apply.
         val name = if (m.role == Role.USER) conv.userName else conv.characterName
         val editPrefix = namePrefix(m.text, name)
@@ -491,11 +514,11 @@ class ChatViewModel(
      *  restoring that prompt into the input (mirrors the prototype). */
     fun deleteLastAssistant() {
         val conv = base ?: return
-        val ai = conv.messages.indexOfLast { it.role == Role.ASSISTANT }
+        val ai = conv.messages.indexOfLast { it.role == Role.ASSISTANT && !it.isSceneImage }
         if (ai < 0) return
         var ui = -1
         for (j in ai - 1 downTo 0) {
-            if (conv.messages[j].role == Role.USER) { ui = j; break }
+            if (conv.messages[j].role == Role.USER && !conv.messages[j].isSceneImage) { ui = j; break }
         }
         val assistantId = conv.messages[ai].id
         val userId = if (ui >= 0) conv.messages[ui].id else null
@@ -552,6 +575,86 @@ class ChatViewModel(
 
     /** Consume the one-shot navigation flag once the screen has switched to details. */
     fun consumeSummarizeDone() = local.update { it.copy(summarizeDoneId = null) }
+
+    // ---- scene images ------------------------------------------------------
+
+    /** Embed a scene-image placeholder at the end of the chat and start generating:
+     *  the model describes the scene around [focus], then a ComfyUI job renders it.
+     *  The placeholder is persisted immediately so it survives a process death. */
+    fun generateSceneImage(focus: String) {
+        val conv = base ?: return
+        val messageId = IdGen.next()
+        val placeholder = ChatMessage(
+            id = messageId,
+            role = Role.ASSISTANT,
+            sceneImage = SceneImageMeta(focus = focus.trim(), status = SceneImageMeta.STATUS_DESCRIBING),
+        )
+        val updated = conv.copy(
+            updatedAt = System.currentTimeMillis(),
+            messages = conv.messages + placeholder,
+        )
+        local.update { it.copy(selectedMsgId = null) }
+        saveThen(updated) { SceneImageService.start(app, convId, messageId, reusePrompt = false) }
+    }
+
+    /** Regenerate from an existing scene image, appending ANOTHER placeholder (the
+     *  original is untouched). [reusePrompt] re-runs the saved description with a fresh
+     *  seed; otherwise the model writes a new description from the same focus. */
+    fun regenerateScene(sourceMessageId: Long, reusePrompt: Boolean) {
+        val conv = base ?: return
+        val src = conv.messages.firstOrNull { it.id == sourceMessageId }?.sceneImage ?: return
+        val messageId = IdGen.next()
+        val meta = if (reusePrompt) {
+            SceneImageMeta(focus = src.focus, prompt = src.prompt, status = SceneImageMeta.STATUS_GENERATING)
+        } else {
+            SceneImageMeta(focus = src.focus, status = SceneImageMeta.STATUS_DESCRIBING)
+        }
+        val placeholder = ChatMessage(id = messageId, role = Role.ASSISTANT, sceneImage = meta)
+        val updated = conv.copy(
+            updatedAt = System.currentTimeMillis(),
+            messages = conv.messages + placeholder,
+        )
+        local.update { it.copy(selectedMsgId = null) }
+        saveThen(updated) { SceneImageService.start(app, convId, messageId, reusePrompt) }
+    }
+
+    /** Re-run a failed (or stalled) scene-image placeholder in place. Reuses the saved
+     *  prompt when one exists (failed during rendering), else re-describes. */
+    fun retryScene(messageId: Long) {
+        val conv = base ?: return
+        val meta = conv.messages.firstOrNull { it.id == messageId }?.sceneImage ?: return
+        val reuse = meta.prompt.isNotBlank()
+        val status = if (reuse) SceneImageMeta.STATUS_GENERATING else SceneImageMeta.STATUS_DESCRIBING
+        val updated = conv.copy(
+            updatedAt = System.currentTimeMillis(),
+            messages = conv.messages.map { m ->
+                if (m.id == messageId && m.sceneImage != null)
+                    m.copy(sceneImage = m.sceneImage.copy(status = status, error = ""))
+                else m
+            },
+        )
+        saveThen(updated) { SceneImageService.start(app, convId, messageId, reuse) }
+    }
+
+    /** Remove a scene-image message: cancel any work still in flight for it and delete
+     *  its image files. */
+    fun deleteSceneMessage(messageId: Long) {
+        val conv = base ?: return
+        val msg = conv.messages.firstOrNull { it.id == messageId } ?: return
+        val atts = msg.attachments
+        val jobId = msg.sceneImage?.jobId ?: -1L
+        val updated = conv.copy(
+            updatedAt = System.currentTimeMillis(),
+            messages = conv.messages.filterNot { it.id == messageId },
+        )
+        local.update { it.copy(selectedMsgId = null) }
+        SceneImageService.cancel(app, messageId)
+        if (jobId >= 0) ComfyGenerationService.cancelJob(app, jobId)
+        if (atts.isNotEmpty()) {
+            viewModelScope.launch(Dispatchers.IO) { app.attachmentStore.delete(convId, atts) }
+        }
+        saveThen(updated)
+    }
 
     // ---- backup ------------------------------------------------------------
 
