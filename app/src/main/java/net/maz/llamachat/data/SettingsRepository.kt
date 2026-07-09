@@ -31,6 +31,7 @@ class SettingsRepository(private val context: Context) {
         val SCENE_WORKFLOW_ID = longPreferencesKey("scene_workflow_id")
         val SCENE_PROMPT_NODE = stringPreferencesKey("scene_prompt_node_title")
         val SCENE_PROMPT_INPUT = stringPreferencesKey("scene_prompt_input")
+        val SCENE_SYSTEM_PROMPT = stringPreferencesKey("scene_system_prompt")
         val USER_NAME = stringPreferencesKey("user_name")
         val SEEDED = booleanPreferencesKey("seeded")
     }
@@ -61,6 +62,9 @@ class SettingsRepository(private val context: Context) {
         val scenePromptNodeTitle: String,
         /** `inputs` key on that node that receives the generated prompt. */
         val scenePromptInput: String,
+        /** System instruction that steers the scene-image description. Blank = the built-in
+         *  default ([net.maz.llamachat.data.gen.SceneImageConfig.SYSTEM_PROMPT]). */
+        val sceneSystemPrompt: String,
         /** Default name for new conversations' `{{user}}`; the last name the user set. */
         val userName: String,
     )
@@ -81,6 +85,7 @@ class SettingsRepository(private val context: Context) {
             sceneWorkflowId = prefs[Keys.SCENE_WORKFLOW_ID] ?: -1L,
             scenePromptNodeTitle = prefs[Keys.SCENE_PROMPT_NODE] ?: "",
             scenePromptInput = prefs[Keys.SCENE_PROMPT_INPUT] ?: "",
+            sceneSystemPrompt = prefs[Keys.SCENE_SYSTEM_PROMPT] ?: "",
             userName = prefs[Keys.USER_NAME]?.takeIf { it.isNotBlank() } ?: "user",
         )
     }
@@ -146,6 +151,11 @@ class SettingsRepository(private val context: Context) {
             it[Keys.SCENE_PROMPT_NODE] = nodeTitle
             it[Keys.SCENE_PROMPT_INPUT] = input
         }
+    }
+
+    /** Override the scene-image description system prompt; blank restores the default. */
+    suspend fun setSceneSystemPrompt(prompt: String) {
+        context.dataStore.edit { it[Keys.SCENE_SYSTEM_PROMPT] = prompt }
     }
 
     /** Remember the most recently used name as the default for future conversations. */

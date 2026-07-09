@@ -172,7 +172,7 @@ object ChatRequestBuilder {
         return ChatRequest(
             model = s.sceneImageModel.ifEmpty { conv.model.ifEmpty { s.currentModel } },
             messages = listOf(
-                apiText("system", SceneImageConfig.SYSTEM_PROMPT),
+                apiText("system", s.sceneSystemPrompt.ifBlank { SceneImageConfig.SYSTEM_PROMPT }),
                 apiText("user", userTurn),
             ),
             stream = true,

@@ -1,12 +1,16 @@
 package net.maz.llamachat.ui.settings
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -234,6 +238,25 @@ fun SettingsScreen(
                     color = DcColors.OnSurfaceFaint,
                     fontSize = 12.sp,
                     modifier = Modifier.padding(start = 12.dp, top = 2.dp),
+                )
+            }
+            Spacer(Modifier.height(14.dp))
+            DcTextField(
+                label = "Description system prompt",
+                value = state.sceneSystemPrompt,
+                onValueChange = vm::setSceneSystemPrompt,
+                singleLine = false,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp),
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Text(
+                    "Reset to default",
+                    color = DcColors.Primary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier
+                        .clickable { vm.resetSceneSystemPrompt() }
+                        .padding(start = 8.dp, top = 6.dp, bottom = 2.dp),
                 )
             }
 

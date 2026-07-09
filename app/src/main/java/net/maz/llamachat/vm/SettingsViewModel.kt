@@ -16,6 +16,7 @@ import net.maz.llamachat.data.comfy.FlowType
 import net.maz.llamachat.data.comfy.InstalledWorkflow
 import net.maz.llamachat.data.comfy.ParsedWorkflowZip
 import net.maz.llamachat.data.comfy.WorkflowField
+import net.maz.llamachat.data.gen.SceneImageConfig
 import net.maz.llamachat.data.model.Catalog
 import net.maz.llamachat.data.net.ServerHealth
 
@@ -58,6 +59,9 @@ data class SettingsUiState(
     /** The currently-chosen prompt field, addressed by node title + input. */
     val scenePromptNodeTitle: String = "",
     val scenePromptInput: String = "",
+    /** System instruction steering the scene-image description (editable; the built-in
+     *  default is shown when the user hasn't overridden it). */
+    val sceneSystemPrompt: String = "",
 )
 
 class SettingsViewModel(private val app: LlamaChatApp) : ViewModel() {
@@ -124,6 +128,7 @@ class SettingsViewModel(private val app: LlamaChatApp) : ViewModel() {
                     sceneWorkflowName = workflowName(s.sceneWorkflowId),
                     scenePromptNodeTitle = s.scenePromptNodeTitle,
                     scenePromptInput = s.scenePromptInput,
+                    sceneSystemPrompt = s.sceneSystemPrompt.ifEmpty { SceneImageConfig.SYSTEM_PROMPT },
                 )
             }
             if (s.sceneWorkflowId >= 0) loadSceneFields(s.sceneWorkflowId)
@@ -183,6 +188,20 @@ class SettingsViewModel(private val app: LlamaChatApp) : ViewModel() {
         val field = _state.value.scenePromptFields.firstOrNull { it.displayLabel == label } ?: return
         _state.update { it.copy(scenePromptNodeTitle = field.nodeTitle, scenePromptInput = field.input) }
         viewModelScope.launch { app.settingsRepository.setScenePromptField(field.nodeTitle, field.input) }
+    }
+
+    /** Edit the scene-image system prompt. Persisting the built-in default verbatim stores
+     *  blank, so future default tweaks still flow through to users who never customized it. */
+    fun setSceneSystemPrompt(prompt: String) {
+        _state.update { it.copy(sceneSystemPrompt = prompt) }
+        val stored = if (prompt == SceneImageConfig.SYSTEM_PROMPT) "" else prompt
+        viewModelScope.launch { app.settingsRepository.setSceneSystemPrompt(stored) }
+    }
+
+    /** Restore the built-in scene-image system prompt. */
+    fun resetSceneSystemPrompt() {
+        _state.update { it.copy(sceneSystemPrompt = SceneImageConfig.SYSTEM_PROMPT) }
+        viewModelScope.launch { app.settingsRepository.setSceneSystemPrompt("") }
     }
 
     /** Persist the model the character generator should use, immediately. */
