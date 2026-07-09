@@ -21,6 +21,7 @@ import net.maz.llamachat.ui.characters.CharacterEditScreen
 import net.maz.llamachat.ui.characters.CharacterListScreen
 import net.maz.llamachat.ui.characters.GeneratorScreen
 import net.maz.llamachat.ui.chat.ChatScreen
+import net.maz.llamachat.ui.chat.SceneImageViewerScreen
 import net.maz.llamachat.ui.gallery.GalleryScreen
 import net.maz.llamachat.ui.gallery.ViewerScreen
 import net.maz.llamachat.ui.home.HomeScreen
@@ -55,7 +56,9 @@ object Routes {
     const val GALLERY = "gallery"
     const val QUEUE = "queue"
     const val VIEWER = "viewer"
+    const val SCENE_IMAGE = "scene_image"
     fun chat(id: Long) = "$CHAT/$id"
+    fun sceneImage(convId: Long, messageId: Long) = "$SCENE_IMAGE/$convId/$messageId"
     fun newConv(editId: Long? = null) = if (editId == null) NEW else "$NEW?convId=$editId"
     fun editCharacter(name: String? = null) =
         if (name == null) CHARACTER_EDIT else "$CHARACTER_EDIT?name=${Uri.encode(name)}"
@@ -287,6 +290,27 @@ fun LlamaChatNavHost() {
                 onEditDetails = { id ->
                     navController.navigate(Routes.newConv(id))
                 },
+                onOpenSettings = openSettings,
+                onOpenSceneImage = { messageId ->
+                    navController.navigate(Routes.sceneImage(convId, messageId))
+                },
+            )
+        }
+
+        composable(
+            route = "${Routes.SCENE_IMAGE}/{convId}/{messageId}",
+            arguments = listOf(
+                navArgument("convId") { type = NavType.LongType },
+                navArgument("messageId") { type = NavType.LongType },
+            ),
+        ) { backStackEntry ->
+            val convId = backStackEntry.arguments?.getLong("convId") ?: return@composable
+            val messageId = backStackEntry.arguments?.getLong("messageId") ?: return@composable
+            val vm: ChatViewModel = viewModel(factory = ChatViewModel.factory(app, convId))
+            SceneImageViewerScreen(
+                vm = vm,
+                messageId = messageId,
+                onBack = { navController.popBackStack() },
                 onOpenSettings = openSettings,
             )
         }
