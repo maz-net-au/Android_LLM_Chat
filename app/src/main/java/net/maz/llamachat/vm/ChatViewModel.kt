@@ -191,6 +191,12 @@ class ChatViewModel(
     init {
         // Prime [base] so actions work even before the UI starts collecting.
         viewModelScope.launch { base = repo.get(convId) }
+        // Reconcile scene-image placeholders left mid-flight by a process death: a
+        // "describing" message with no live describe, or a "generating" one with no
+        // Comfy job (submitted jobs resume via the ledger), can never finish — mark it
+        // failed so the bubble offers Retry instead of spinning forever. One-shot at
+        // startup, before the user can trigger new scene images.
+        viewModelScope.launch { reconcileStaleScenes() }
         // Measure context usage whenever a generation for this chat finishes.
         // distinctUntilChanged keeps us to the active→inactive edges rather than every
         // token; drop(1) skips the initial state on open so we DON'T `/tokenize` merely
@@ -548,12 +554,14 @@ class ChatViewModel(
         // deleteAll wipes the conversation's whole attachment dir — including any
         // staged (pending) image — so drop that from the input bar too.
         local.update { it.copy(selectedMsgId = null, pendingImage = null) }
+        cancelSceneWork() // stop scene images whose files/messages are about to vanish
         viewModelScope.launch(Dispatchers.IO) { app.attachmentStore.deleteAll(convId) }
         saveThen(updated)
     }
 
     fun deleteConversation() {
         GenerationService.cancel(app) // tear down any reply still streaming for this chat
+        cancelSceneWork() // and any scene-image describe/render for it
         viewModelScope.launch {
             repo.delete(convId)
             launch(Dispatchers.IO) { app.attachmentStore.deleteAll(convId) }
@@ -654,6 +662,43 @@ class ChatViewModel(
             viewModelScope.launch(Dispatchers.IO) { app.attachmentStore.delete(convId, atts) }
         }
         saveThen(updated)
+    }
+
+    /** Fail scene-image placeholders that can no longer make progress after a restart. */
+    private suspend fun reconcileStaleScenes() {
+        val conv = repo.get(convId) ?: return
+        val staleIds = conv.messages.mapNotNull { m ->
+            val meta = m.sceneImage ?: return@mapNotNull null
+            val stale = when (meta.status) {
+                SceneImageMeta.STATUS_DESCRIBING -> m.id !in app.sceneImages.describing.value
+                SceneImageMeta.STATUS_GENERATING ->
+                    app.comfyJobs.jobs.value.none { it.messageId == m.id && it.convId == convId }
+                else -> false
+            }
+            m.id.takeIf { stale }
+        }.toSet()
+        if (staleIds.isEmpty()) return
+        val fresh = repo.get(convId) ?: return
+        val updated = fresh.copy(
+            messages = fresh.messages.map { m ->
+                val meta = m.sceneImage
+                if (m.id in staleIds && meta != null &&
+                    (meta.status == SceneImageMeta.STATUS_DESCRIBING || meta.status == SceneImageMeta.STATUS_GENERATING)
+                ) {
+                    m.copy(sceneImage = meta.copy(status = SceneImageMeta.STATUS_FAILED, error = "Interrupted before completion"))
+                } else m
+            },
+        )
+        base = updated
+        repo.save(updated)
+    }
+
+    /** Stop any scene-image work in flight for this conversation (describe + Comfy jobs). */
+    private fun cancelSceneWork() {
+        base?.messages?.filter { it.isSceneImage }?.forEach { SceneImageService.cancel(app, it.id) }
+        app.comfyJobs.jobs.value
+            .filter { it.destination == ComfyJob.DEST_CHAT && it.convId == convId && !it.status.isTerminal }
+            .forEach { ComfyGenerationService.cancelJob(app, it.id) }
     }
 
     // ---- backup ------------------------------------------------------------

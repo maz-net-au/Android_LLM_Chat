@@ -174,6 +174,10 @@ data class Conversation(
     /** One-line preview for the conversation list, matching the prototype. */
     fun preview(): String {
         val last = messages.lastOrNull() ?: return "No messages yet"
+        // Scene images have no text; show a label with the focus instead.
+        last.sceneImage?.let { meta ->
+            return if (meta.focus.isBlank()) "Scene image" else "Scene image: ${meta.focus}"
+        }
         val prefix = if (last.role == Role.USER) "You: " else ""
         val cleaned = last.text
             .replace(Regex("[`*#\\n]"), " ")
