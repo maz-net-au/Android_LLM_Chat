@@ -31,6 +31,38 @@ data class Attachment(
 }
 
 /**
+ * Marks a message as an in-chat scene image (see the scene-image feature): the
+ * user's [focus], the LLM-written image [prompt], and the ComfyUI job producing
+ * it. A non-null value means the message is a scene image — it is rendered as a
+ * placeholder/preview and is NEVER sent to llama-server (excluded from every
+ * request-builder path and from token counting). The finished image rides on the
+ * same message as an ordinary [Attachment] (KIND_IMAGE); it never enters the gallery.
+ *
+ * ⚠️ Serialized into the Room blob AND the backup via [ChatMessage] — same rules:
+ * add fields only with defaults; never rename/remove/retype. [status] is a plain
+ * string so unknown future states still decode.
+ */
+@Serializable
+data class SceneImageMeta(
+    val focus: String = "",
+    /** LLM-generated image description; empty until the describe step finishes. */
+    val prompt: String = "",
+    /** ComfyJob producing the image; -1 until submitted. */
+    val jobId: Long = -1L,
+    /** Installed workflow used, so regenerate can reuse it; -1 when unknown. */
+    val workflowId: Long = -1L,
+    val status: String = STATUS_DESCRIBING,
+    val error: String = "",
+) {
+    companion object {
+        const val STATUS_DESCRIBING = "describing"
+        const val STATUS_GENERATING = "generating"
+        const val STATUS_DONE = "done"
+        const val STATUS_FAILED = "failed"
+    }
+}
+
+/**
  * A single message. Assistant messages can carry multiple [variants] (one per
  * "regenerate"); user messages always have exactly one. [activeVariant] selects
  * which variant is currently shown.
@@ -53,9 +85,15 @@ data class ChatMessage(
     val locked: Boolean = false,
     /** Media sent with this message (images/audio). Default keeps old blobs decoding. */
     val attachments: List<Attachment> = emptyList(),
+    /** Non-null marks this as a scene-image message: shown but never sent to the model.
+     *  Default keeps old blobs decoding. */
+    val sceneImage: SceneImageMeta? = null,
 ) {
     val text: String get() = variants.getOrElse(activeVariant) { "" }
     val variantCount: Int get() = variants.size
+
+    /** Scene-image messages are rendered locally and excluded from all LLM traffic. */
+    val isSceneImage: Boolean get() = sceneImage != null
 
     fun withText(newText: String): ChatMessage {
         val updated = variants.toMutableList()

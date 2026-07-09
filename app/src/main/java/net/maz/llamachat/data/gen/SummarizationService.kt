@@ -81,7 +81,8 @@ class SummarizationService : Service() {
         val keepFrom = SummarizationConfig.keepFrom(conv.messages.size)
         if (keepFrom <= 0) return // nothing old enough to compact
         // Capture which messages to lock now, so a message sent mid-run stays unlocked.
-        val lockIds = conv.messages.take(keepFrom).map { it.id }.toSet()
+        // Scene images aren't part of the transcript, so leave them alone (keeps Delete working).
+        val lockIds = conv.messages.take(keepFrom).filterNot { it.isSceneImage }.map { it.id }.toSet()
         val s = app.settingsRepository.current()
         val request = ChatRequestBuilder.summarize(conv, keepFrom, s)
 

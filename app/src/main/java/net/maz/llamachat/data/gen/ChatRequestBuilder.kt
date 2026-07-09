@@ -43,7 +43,8 @@ object ChatRequestBuilder {
         systemMessage(conv)?.let { out += it }
         conv.messages.forEachIndexed { i, m ->
             // Locked messages are represented by the summary in [systemMessage], not resent.
-            if (i < assistantIndex && !m.locked) out += apiMessage(m, attachmentPart)
+            // Scene images are local-only and never reach the model.
+            if (i < assistantIndex && !m.locked && !m.isSceneImage) out += apiMessage(m, attachmentPart)
         }
         if (includePartial) {
             // Sent verbatim, including any trailing space, so the model continues from
@@ -80,6 +81,7 @@ object ChatRequestBuilder {
         val last = conv.messages.lastIndex
         conv.messages.forEachIndexed { i, m ->
             if (m.locked) return@forEachIndexed // folded into the summary; not resent
+            if (m.isSceneImage) return@forEachIndexed // local-only; never sent to the model
             if (i == last && m.role == Role.ASSISTANT && conv.character.usesNamePrefixes) {
                 // No trailing space after the "Name:" prefix: ending the prompt on a
                 // lone space token makes the model predict end-of-turn immediately
@@ -104,7 +106,7 @@ object ChatRequestBuilder {
      */
     fun transcriptForCount(conv: Conversation): String = buildString {
         systemContent(conv).takeIf { it.isNotBlank() }?.let { appendLine(it) }
-        conv.messages.forEach { if (!it.locked) appendLine(it.text) }
+        conv.messages.forEach { if (!it.locked && !it.isSceneImage) appendLine(it.text) }
     }
 
     /**
@@ -121,7 +123,7 @@ object ChatRequestBuilder {
                 appendLine("New messages since then:")
             }
             conv.messages.take(keepFrom).forEach { m ->
-                if (!m.locked) appendLine(stripThink(m.text))
+                if (!m.locked && !m.isSceneImage) appendLine(stripThink(m.text))
             }
             appendLine()
             append(SummarizationConfig.FOLD_INSTRUCTION)
