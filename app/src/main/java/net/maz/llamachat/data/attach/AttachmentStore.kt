@@ -37,6 +37,11 @@ class AttachmentStore(private val context: Context) {
     /** Fresh target file for a WAV recording; pairs with the [Attachment] built on stop. */
     fun newAudioFile(convId: Long, id: Long): File = File(dirFor(convId), "$id.wav")
 
+    /** Fresh target file for a downloaded image (e.g. a scene image); pairs with the
+     *  [Attachment] built once the bytes are written. */
+    fun newImageFile(convId: Long, id: Long, ext: String): File =
+        File(dirFor(convId), if (ext.isEmpty()) "$id" else "$id.$ext")
+
     /**
      * Copy the image at [uri] into the conversation's attachment dir, downscaled
      * to at most [MAX_DIMENSION_PX] on the long side and re-encoded as JPEG —

@@ -30,7 +30,10 @@ import kotlinx.serialization.json.jsonPrimitive
 import net.maz.llamachat.LlamaChatApp
 import net.maz.llamachat.MainActivity
 import net.maz.llamachat.R
+import net.maz.llamachat.data.IdGen
 import net.maz.llamachat.data.SettingsRepository.Settings
+import net.maz.llamachat.data.model.Attachment
+import net.maz.llamachat.data.model.SceneImageMeta
 import net.maz.llamachat.data.net.ComfyFileRef
 import net.maz.llamachat.data.net.ComfyHistoryResult
 
@@ -185,8 +188,8 @@ class ComfyGenerationService : Service() {
         }
     }
 
-    /** Pull every output file into the gallery; the job is DONE only once all
-     *  rows are inserted (a failed download leaves no partial row). */
+    /** Pull every output file into its destination; the job is DONE only once all
+     *  outputs are stored (a failed download leaves no partial result). */
     private suspend fun download(job: ComfyJob, outputs: kotlinx.serialization.json.JsonObject, s: Settings) {
         val controller = app.comfyJobs
         controller.update(job.id) { it.copy(status = ComfyJobStatus.DOWNLOADING) }
@@ -206,6 +209,12 @@ class ComfyGenerationService : Service() {
             fail(job.id, "Workflow produced no output at '${job.outputNodeId}'.${job.outputField}")
             return
         }
+        if (job.destination == ComfyJob.DEST_CHAT) downloadToChat(job, refs, s)
+        else downloadToGallery(job, refs, s)
+    }
+
+    private suspend fun downloadToGallery(job: ComfyJob, refs: List<ComfyFileRef>, s: Settings) {
+        val controller = app.comfyJobs
         for (ref in refs) {
             val (item, dest) = app.galleryRepository.store.newItem(job.flowType, job.workflowName, ref.filename)
             app.comfyClient.download(s.ip, s.comfyPort, ref, dest)
@@ -214,6 +223,64 @@ class ComfyGenerationService : Service() {
             controller.linkGalleryItem(item.id, job.id)
         }
         controller.update(job.id) { it.copy(status = ComfyJobStatus.DONE) }
+    }
+
+    /** Store outputs as attachments on the scene-image message (never the gallery).
+     *  If the conversation or message vanished, discard the bytes and cancel — never
+     *  leave an orphan file or a stuck placeholder. */
+    private suspend fun downloadToChat(job: ComfyJob, refs: List<ComfyFileRef>, s: Settings) {
+        val controller = app.comfyJobs
+        val store = app.attachmentStore
+        if (!messageStillPresent(job)) {
+            controller.update(job.id) {
+                it.copy(status = ComfyJobStatus.CANCELLED, message = "Conversation no longer exists")
+            }
+            return
+        }
+        val atts = ArrayList<Attachment>()
+        for (ref in refs) {
+            val id = IdGen.next()
+            val ext = ref.filename.substringAfterLast('.', "").lowercase()
+            val dest = store.newImageFile(job.convId, id, ext)
+            app.comfyClient.download(s.ip, s.comfyPort, ref, dest)
+                .getOrElse { store.delete(job.convId, atts); fail(job.id, it.message ?: "Download failed"); return }
+            atts += Attachment(id, Attachment.KIND_IMAGE, dest.name, mimeForExt(ext))
+        }
+        // The conversation may have been deleted while the bytes streamed in.
+        val conv = app.conversationRepository.get(job.convId)
+        if (conv == null || conv.messages.none { it.id == job.messageId }) {
+            store.delete(job.convId, atts)
+            controller.update(job.id) {
+                it.copy(status = ComfyJobStatus.CANCELLED, message = "Conversation no longer exists")
+            }
+            return
+        }
+        app.conversationRepository.save(
+            conv.copy(
+                updatedAt = System.currentTimeMillis(),
+                messages = conv.messages.map { m ->
+                    if (m.id == job.messageId && m.sceneImage != null) {
+                        m.copy(
+                            attachments = m.attachments + atts,
+                            sceneImage = m.sceneImage.copy(status = SceneImageMeta.STATUS_DONE),
+                        )
+                    } else m
+                },
+            ),
+        )
+        controller.update(job.id) { it.copy(status = ComfyJobStatus.DONE) }
+    }
+
+    private suspend fun messageStillPresent(job: ComfyJob): Boolean {
+        val conv = app.conversationRepository.get(job.convId) ?: return false
+        return conv.messages.any { it.id == job.messageId }
+    }
+
+    private fun mimeForExt(ext: String): String = when (ext) {
+        "png" -> "image/png"
+        "jpg", "jpeg" -> "image/jpeg"
+        "webp" -> "image/webp"
+        else -> "image/png"
     }
 
     /**
@@ -245,12 +312,33 @@ class ComfyGenerationService : Service() {
     private fun currentJob(jobId: Long): ComfyJob? =
         app.comfyJobs.jobs.value.firstOrNull { it.id == jobId }
 
-    private fun fail(jobId: Long, message: String) {
+    private suspend fun fail(jobId: Long, message: String) {
         historyMisses.remove(jobId)
+        val job = currentJob(jobId)
         app.comfyJobs.update(jobId) {
             it.copy(status = ComfyJobStatus.FAILED, message = message.take(300))
         }
         app.comfyJobs.deletePendingFiles(jobId)
+        if (job != null && job.destination == ComfyJob.DEST_CHAT) markMessageFailed(job, message)
+    }
+
+    /** Surface a chat job's failure on its scene-image placeholder so the bubble can
+     *  offer Retry instead of spinning forever. */
+    private suspend fun markMessageFailed(job: ComfyJob, message: String) {
+        val conv = app.conversationRepository.get(job.convId) ?: return
+        if (conv.messages.none { it.id == job.messageId }) return
+        app.conversationRepository.save(
+            conv.copy(
+                messages = conv.messages.map { m ->
+                    if (m.id == job.messageId && m.sceneImage != null) {
+                        m.copy(sceneImage = m.sceneImage.copy(
+                            status = SceneImageMeta.STATUS_FAILED,
+                            error = message.take(300),
+                        ))
+                    } else m
+                },
+            ),
+        )
     }
 
     // ---- foreground notification ----------------------------------------------

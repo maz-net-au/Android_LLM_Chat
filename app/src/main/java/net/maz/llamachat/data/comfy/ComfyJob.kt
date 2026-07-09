@@ -43,8 +43,19 @@ data class ComfyJob(
     val status: ComfyJobStatus = ComfyJobStatus.QUEUED,
     /** Failure reason (FAILED) or progress hint. */
     val message: String? = null,
+    /** Where finished outputs land: [DEST_GALLERY] (default) or [DEST_CHAT].
+     *  Defaults keep pre-existing ledgers decoding. */
+    val destination: String = DEST_GALLERY,
+    /** For [DEST_CHAT]: the conversation and scene-image message to fill in. */
+    val convId: Long = -1L,
+    val messageId: Long = -1L,
 ) {
     val canRegenerate: Boolean get() = workflowId >= 0
+
+    companion object {
+        const val DEST_GALLERY = "gallery"
+        const val DEST_CHAT = "chat"
+    }
 }
 
 /** One scalar form value, addressed like [PatchOp], captured for regeneration. */
