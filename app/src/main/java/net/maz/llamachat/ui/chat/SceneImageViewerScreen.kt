@@ -57,13 +57,23 @@ fun SceneImageViewerScreen(
 ) {
     val state by vm.ui.collectAsStateWithLifecycle()
     val app = LocalContext.current.applicationContext as LlamaChatApp
-    val message = state.conversation?.messages?.firstOrNull { it.id == messageId }
+    val conversation = state.conversation
+    val message = conversation?.messages?.firstOrNull { it.id == messageId }
     val meta = message?.sceneImage
     val file = message?.attachments?.firstOrNull()?.let { app.attachmentStore.fileFor(vm.convId, it) }
 
-    // If the message is gone (deleted here or elsewhere), leave the screen.
-    LaunchedEffect(message == null) { if (message == null) onBack() }
-    if (message == null || meta == null) return
+    // Pop only once the chat has loaded and the message is genuinely gone (deleted) —
+    // not on the first frame, before the conversation flow has emitted.
+    LaunchedEffect(conversation != null, message == null) {
+        if (conversation != null && message == null) onBack()
+    }
+    if (message == null || meta == null) {
+        // Loading (or just deleted): a plain black screen with a working back button.
+        Column(Modifier.fillMaxSize().background(Color.Black)) {
+            DcAppBar(title = "Scene image", onBack = onBack, onOpenSettings = onOpenSettings)
+        }
+        return
+    }
 
     var confirmDelete by remember { mutableStateOf(false) }
     var regenChoice by remember { mutableStateOf(false) }
