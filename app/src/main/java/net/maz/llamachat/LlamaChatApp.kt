@@ -11,6 +11,7 @@ import net.maz.llamachat.data.comfy.ComfyJobController
 import net.maz.llamachat.data.comfy.WorkflowStore
 import net.maz.llamachat.data.db.AppDatabase
 import net.maz.llamachat.data.gen.GenerationController
+import net.maz.llamachat.data.gen.SceneImageController
 import net.maz.llamachat.data.gen.SummarizationController
 import net.maz.llamachat.data.net.ComfyClient
 import net.maz.llamachat.data.net.LlamaClient
@@ -48,6 +49,8 @@ class LlamaChatApp : Application() {
     val generation = GenerationController()
     /** Live state of the in-flight summarization, shared with the SummarizationService. */
     val summarization = SummarizationController()
+    /** Scene-image placeholders currently in their describe step, shared with the SceneImageService. */
+    val sceneImages = SceneImageController()
     /** Ledger of ComfyUI generation jobs, shared with the ComfyGenerationService. */
     val comfyJobs by lazy { ComfyJobController(this) }
 

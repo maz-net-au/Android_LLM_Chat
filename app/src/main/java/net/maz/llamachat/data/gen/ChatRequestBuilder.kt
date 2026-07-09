@@ -146,6 +146,45 @@ object ChatRequestBuilder {
         )
     }
 
+    /**
+     * Build the request that asks a (dedicated) model to describe the current scene as
+     * a single text-to-image prompt around [focus]. Context — the character persona, any
+     * summary, and the recent transcript (scene images excluded) — is supplied as the
+     * user turn; the strict framing lives in [SceneImageConfig]. Uses its own fixed
+     * sampling and the scene-image model, falling back to the conversation/current model.
+     */
+    fun sceneDescription(conv: Conversation, focus: String, s: SettingsRepository.Settings): ChatRequest {
+        val userTurn = buildString {
+            val context = systemContent(conv)
+            if (context.isNotBlank()) {
+                appendLine(context)
+                appendLine()
+            }
+            appendLine("## Recent messages")
+            conv.messages.forEach { m ->
+                if (!m.locked && !m.isSceneImage && m.text.isNotBlank()) appendLine(stripThink(m.text))
+            }
+            appendLine()
+            appendLine("Focus for the image: ${focus.ifBlank { "the current scene" }}")
+            append(SceneImageConfig.INSTRUCTION)
+        }
+        val preset = SceneImageConfig.sampling
+        return ChatRequest(
+            model = s.sceneImageModel.ifEmpty { conv.model.ifEmpty { s.currentModel } },
+            messages = listOf(
+                apiText("system", SceneImageConfig.SYSTEM_PROMPT),
+                apiText("user", userTurn),
+            ),
+            stream = true,
+            stop = null,
+            maxTokens = SceneImageConfig.MAX_DESCRIPTION_TOKENS,
+            temperature = preset.temperature,
+            topP = preset.topP,
+            topK = preset.topK,
+            repeatPenalty = preset.repeatPenalty,
+        )
+    }
+
     /** The system persona plus, when present, the running summary of older messages. */
     private fun systemContent(conv: Conversation): String {
         val context = conv.character.resolvedContext(conv.userName)
