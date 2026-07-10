@@ -606,16 +606,22 @@ class ChatViewModel(
     }
 
     /** Regenerate from an existing scene image, appending ANOTHER placeholder (the
-     *  original is untouched). [reusePrompt] re-runs the saved description with a fresh
-     *  seed; otherwise the model writes a new description from the same focus. */
-    fun regenerateScene(sourceMessageId: Long, reusePrompt: Boolean) {
+     *  original is untouched). [editedPrompt], when non-null, renders that exact description
+     *  (the user hand-edited it); otherwise [reusePrompt] re-runs the saved description with
+     *  a fresh seed, and if neither, the model writes a new description from the same focus. */
+    fun regenerateScene(sourceMessageId: Long, reusePrompt: Boolean = false, editedPrompt: String? = null) {
         val conv = base ?: return
         val src = conv.messages.firstOrNull { it.id == sourceMessageId }?.sceneImage ?: return
         val messageId = IdGen.next()
-        val meta = if (reusePrompt) {
-            SceneImageMeta(focus = src.focus, prompt = src.prompt, status = SceneImageMeta.STATUS_GENERATING)
-        } else {
-            SceneImageMeta(focus = src.focus, status = SceneImageMeta.STATUS_DESCRIBING)
+        // An edited prompt renders directly, like reuse, just with different text.
+        val reuse = reusePrompt || editedPrompt != null
+        val meta = when {
+            editedPrompt != null ->
+                SceneImageMeta(focus = src.focus, prompt = editedPrompt.trim(), status = SceneImageMeta.STATUS_GENERATING)
+            reusePrompt ->
+                SceneImageMeta(focus = src.focus, prompt = src.prompt, status = SceneImageMeta.STATUS_GENERATING)
+            else ->
+                SceneImageMeta(focus = src.focus, status = SceneImageMeta.STATUS_DESCRIBING)
         }
         val placeholder = ChatMessage(id = messageId, role = Role.ASSISTANT, sceneImage = meta)
         val updated = conv.copy(
@@ -623,7 +629,7 @@ class ChatViewModel(
             messages = conv.messages + placeholder,
         )
         local.update { it.copy(selectedMsgId = null) }
-        saveThen(updated) { SceneImageService.start(app, convId, messageId, reusePrompt) }
+        saveThen(updated) { SceneImageService.start(app, convId, messageId, reuse) }
     }
 
     /** Re-run a failed (or stalled) scene-image placeholder in place. Reuses the saved
