@@ -1,6 +1,8 @@
 package net.maz.llamachat.ui.chat
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -99,6 +102,25 @@ fun SceneImageViewerScreen(
                 color = Color.White.copy(alpha = 0.7f),
                 fontSize = 12.sp,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+            )
+        }
+
+        if (meta.prompt.isNotBlank()) {
+            Text(
+                "Prompt",
+                color = Color.White.copy(alpha = 0.5f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp),
+            )
+            Text(
+                meta.prompt,
+                color = Color.White.copy(alpha = 0.85f),
+                fontSize = 13.sp,
+                modifier = Modifier
+                    .heightIn(max = 140.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 2.dp),
             )
         }
 

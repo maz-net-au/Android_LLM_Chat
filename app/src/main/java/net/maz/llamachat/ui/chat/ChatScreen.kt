@@ -61,6 +61,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material3.AlertDialog
@@ -76,6 +77,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -266,6 +268,10 @@ fun ChatScreen(
     }
 
     val listState = rememberLazyListState()
+    // Scene images are spoilered by default; a tap reveals them. Kept in-memory for the
+    // screen's lifetime so revealed images stay open while scrolling, but re-hide when the
+    // conversation is left and reopened.
+    val revealedScenes = remember { mutableStateMapOf<Long, Boolean>() }
     // Re-pin to the bottom of the latest message on new content (so a streaming
     // reply's tail stays visible as it grows), as the keyboard slides in/out (the
     // IME bottom inset animates), and when the last message is selected — its inline
@@ -338,6 +344,8 @@ fun ChatScreen(
                                     ?.let { app.attachmentStore.fileFor(vm.convId, it) },
                                 describing = message.id in state.describingSceneIds,
                                 jobPhase = state.sceneJobPhases[message.id],
+                                revealed = revealedScenes[message.id] == true,
+                                onReveal = { revealedScenes[message.id] = true },
                                 onOpen = { onOpenSceneImage(message.id) },
                                 onRetry = { vm.retryScene(message.id) },
                                 onDelete = { vm.deleteSceneMessage(message.id) },
@@ -1088,6 +1096,8 @@ private fun SceneImageItem(
     file: File?,
     describing: Boolean,
     jobPhase: ComfyJobStatus?,
+    revealed: Boolean,
+    onReveal: () -> Unit,
     onOpen: () -> Unit,
     onRetry: () -> Unit,
     onDelete: () -> Unit,
@@ -1099,6 +1109,9 @@ private fun SceneImageItem(
     ) {
         Column(Modifier.fillMaxWidth(0.85f).widthIn(max = 600.dp)) {
             when {
+                meta.status == SceneImageMeta.STATUS_DONE && file != null && file.exists() && !revealed -> {
+                    SceneSpoilerCover(onReveal = onReveal)
+                }
                 meta.status == SceneImageMeta.STATUS_DONE && file != null && file.exists() -> {
                     AsyncImage(
                         model = file,
@@ -1145,6 +1158,32 @@ private fun SceneImageItem(
                 }
             }
         }
+    }
+}
+
+/** Opaque "tap to reveal" placeholder shown in place of a finished scene image until the
+ *  user taps it. A real cover (not a blur) so nothing of the image leaks, and it works on
+ *  every supported API level (Modifier.blur is a no-op below API 31). */
+@Composable
+private fun SceneSpoilerCover(onReveal: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .size(220.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(DcColors.SurfaceTint)
+            .clickable(onClick = onReveal),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(
+            Icons.Filled.VisibilityOff,
+            contentDescription = null,
+            tint = DcColors.OnSurfaceMedium,
+            modifier = Modifier.size(28.dp),
+        )
+        Spacer(Modifier.height(8.dp))
+        Text("Tap to reveal", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = DcColors.OnSurface)
+        Text("Scene image", fontSize = 11.sp, color = DcColors.OnSurfaceFaint)
     }
 }
 
