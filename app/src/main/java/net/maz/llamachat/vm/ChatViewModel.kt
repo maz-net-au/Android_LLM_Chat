@@ -710,7 +710,7 @@ class ChatViewModel(
     // ---- backup ------------------------------------------------------------
 
     /** The current conversation serialized as a backup file, or null if not loaded yet. */
-    fun backupJson(): String? = base?.let { BackupCodec.encode(it) }
+    fun backupJson(): String? = base?.let { BackupCodec.encode(it, app.attachmentStore) }
 
     // ---- chat menu ---------------------------------------------------------
 

@@ -52,6 +52,17 @@ class HomeViewModel(
             }
             val conv = parsed.toDomain()
             repo.save(conv)
+            // Restore any inlined attachment bytes into the conversation's dir (overwrite-by-id
+            // means conv.id matches what the metadata points at). Text-only files carry none.
+            if (parsed.attachmentBytes.isNotEmpty()) {
+                launch(Dispatchers.IO) {
+                    conv.messages.asSequence().flatMap { it.attachments }.forEach { att ->
+                        parsed.attachmentBytes[att.fileName]?.let { b64 ->
+                            app.attachmentStore.writeBase64(conv.id, att, b64)
+                        }
+                    }
+                }
+            }
             val missing = conv.characterName.takeIf { name ->
                 Catalog.characters.none { it.name == name }
             }
@@ -61,7 +72,7 @@ class HomeViewModel(
 
     /** Serialize [conv] to the text backup format for export to a user-picked file.
      *  The list already carries full message history, so no DB round-trip is needed. */
-    fun exportJson(conv: Conversation): String = BackupCodec.encode(conv)
+    fun exportJson(conv: Conversation): String = BackupCodec.encode(conv, app.attachmentStore)
 
     /** Permanently delete a conversation (and its attachment files) by id. */
     fun delete(id: Long) {

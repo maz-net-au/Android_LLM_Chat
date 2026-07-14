@@ -7,8 +7,8 @@ enum class Role { USER, ASSISTANT }
 /**
  * A media file attached to a message. The bytes live in app-private storage
  * (see AttachmentStore) under `attachments/<convId>/<fileName>`; only this
- * metadata is serialized with the message. Backups stay text-only: attachments
- * are stripped on export.
+ * metadata is serialized with the message. A full backup inlines the bytes
+ * separately (see BackupConversation.attachmentBytes).
  *
  * ⚠️ Serialized into the Room blob via [ChatMessage] — same compatibility rules:
  * add fields only with defaults; never rename/remove/retype. [kind] is a plain

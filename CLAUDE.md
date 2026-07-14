@@ -19,9 +19,10 @@ manual service locator on `LlamaChatApp` (no Hilt).
   backup file format (data/backup/ConversationBackup.kt, `BACKUP_VERSION`).
   Add fields only with defaults; never rename/remove/retype. A breaking change
   needs a DB migration and/or backup version bump — stop and ask first.
-- Backups are text-only: attachment metadata is stripped on export and the bytes
-  (app-private files under `filesDir/attachments/<convId>/`, owned by
-  `AttachmentStore`) never leave the device.
+- Backups are full: attachment metadata is kept and the bytes (app-private files
+  under `filesDir/attachments/<convId>/`, owned by `AttachmentStore`) are inlined
+  as base64 in `BackupConversation.attachmentBytes`, keyed by fileName. So a
+  backup file is self-contained but no longer text-only, and can be large.
 
 ## Server conventions
 

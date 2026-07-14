@@ -108,6 +108,23 @@ class AttachmentStore(private val context: Context) {
         atts.forEach { fileFor(convId, it).delete() }
     }
 
+    /** Base64 of [att]'s raw bytes for a full backup export, or null if the file is
+     *  missing. Unlike [toContentPart] this is the plain file content, no data: URI. */
+    fun readBase64(convId: Long, att: Attachment): String? {
+        val file = fileFor(convId, att)
+        if (!file.exists()) return null
+        return runCatching { Base64.getEncoder().encodeToString(file.readBytes()) }.getOrNull()
+    }
+
+    /** Restore [att]'s bytes from a backup's [b64] into the conversation's dir. Best-effort:
+     *  swallows a malformed payload so one bad attachment can't fail the whole import. */
+    fun writeBase64(convId: Long, att: Attachment, b64: String) {
+        runCatching {
+            val bytes = Base64.getDecoder().decode(b64)
+            fileFor(convId, att).outputStream().use { it.write(bytes) }
+        }
+    }
+
     /** Remove every attachment file for a cleared/deleted conversation. */
     fun deleteAll(convId: Long) {
         File(File(context.filesDir, "attachments"), convId.toString()).deleteRecursively()

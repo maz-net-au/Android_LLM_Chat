@@ -3,6 +3,7 @@ package net.maz.llamachat.data.backup
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import net.maz.llamachat.data.attach.AttachmentStore
 import net.maz.llamachat.data.model.ChatMessage
 import net.maz.llamachat.data.model.Conversation
 import net.maz.llamachat.data.model.SamplingOverrides
@@ -59,6 +60,10 @@ data class BackupConversation(
     val sampling: SamplingOverrides = SamplingOverrides(),
     val summary: String = "",
     val messages: List<ChatMessage> = emptyList(),
+    /** Full backup: raw attachment bytes, base64-keyed by [net.maz.llamachat.data.model.Attachment.fileName]
+     *  (unique within a conversation). Empty for text-only/legacy files, in which case the
+     *  attachment metadata still restores but the images/audio won't resolve. */
+    val attachmentBytes: Map<String, String> = emptyMap(),
 ) {
     /** Restore to a domain conversation, keeping the original [id] (overwrite-by-id). */
     fun toDomain(): Conversation = Conversation(
@@ -76,24 +81,31 @@ data class BackupConversation(
     )
 
     companion object {
-        fun fromDomain(c: Conversation): BackupConversation = BackupConversation(
-            id = c.id,
-            title = c.title,
-            characterName = c.characterName,
-            presetName = c.presetName,
-            model = c.model,
-            createdAt = c.createdAt,
-            updatedAt = c.updatedAt,
-            userName = c.userName,
-            sampling = c.sampling,
-            summary = c.summary,
-            // Backups are text-only: the attachment bytes live in app-private files
-            // and don't travel, so strip the metadata too rather than export
-            // references that could never resolve on import.
-            messages = c.messages.map {
-                if (it.attachments.isEmpty()) it else it.copy(attachments = emptyList())
-            },
-        )
+        /** Snapshot [c] into the backup format, pulling every attachment's bytes out of
+         *  [store] and inlining them as base64 so the file is fully self-contained. */
+        fun fromDomain(c: Conversation, store: AttachmentStore): BackupConversation {
+            val bytes = LinkedHashMap<String, String>()
+            for (m in c.messages) {
+                for (att in m.attachments) {
+                    store.readBase64(c.id, att)?.let { bytes[att.fileName] = it }
+                }
+            }
+            return BackupConversation(
+                id = c.id,
+                title = c.title,
+                characterName = c.characterName,
+                presetName = c.presetName,
+                model = c.model,
+                createdAt = c.createdAt,
+                updatedAt = c.updatedAt,
+                userName = c.userName,
+                sampling = c.sampling,
+                summary = c.summary,
+                // Keep the attachment metadata; its bytes ride along in [attachmentBytes].
+                messages = c.messages,
+                attachmentBytes = bytes,
+            )
+        }
     }
 }
 
@@ -108,10 +120,10 @@ object BackupCodec {
         prettyPrint = true
     }
 
-    fun encode(conv: Conversation): String = json.encodeToString(
+    fun encode(conv: Conversation, store: AttachmentStore): String = json.encodeToString(
         ConversationBackup(
             exportedAt = System.currentTimeMillis(),
-            conversation = BackupConversation.fromDomain(conv),
+            conversation = BackupConversation.fromDomain(conv, store),
         ),
     )
 
