@@ -253,8 +253,13 @@ fun ChatScreen(
     // Scene images are local-only placeholders, not part of the transcript — the reply
     // actions (Regenerate/Impersonate) target the last *real* assistant message.
     val lastAssistantIndex = messages.indexOfLast { it.role == Role.ASSISTANT && !it.isSceneImage }
-    val lastIsAssistant = messages.lastOrNull { !it.isSceneImage }?.role == Role.ASSISTANT
-    val showActions = state.streaming || lastIsAssistant
+    val lastRealRole = messages.lastOrNull { !it.isSceneImage }?.role
+    val lastIsAssistant = lastRealRole == Role.ASSISTANT
+    // A chat left on a bare user turn (e.g. the model returned an empty reply that was
+    // discarded, or a reply never landed) still needs a way forward — offer Regenerate,
+    // which appends a fresh assistant turn and generates a reply for it.
+    val lastIsUser = lastRealRole == Role.USER
+    val showActions = state.streaming || lastIsAssistant || lastIsUser
 
     // Focus prompt for a new scene image.
     var sceneFocus by rememberSaveable { mutableStateOf<String?>(null) }
@@ -393,9 +398,10 @@ fun ChatScreen(
             ActionRow(
                 streaming = state.streaming,
                 impersonating = state.impersonating,
-                regenerateEnabled = !state.streaming && !state.impersonating && lastIsAssistant,
+                regenerateEnabled = !state.streaming && !state.impersonating && (lastIsAssistant || lastIsUser),
                 // Impersonation continues the transcript, so it only makes sense for
-                // characters that use "Name:" prefixes (roleplay-style chats).
+                // characters that use "Name:" prefixes (roleplay-style chats), and it
+                // writes the user's *next* turn — so it needs a preceding assistant reply.
                 showImpersonate = character?.usesNamePrefixes == true,
                 impersonateEnabled = !state.streaming && !state.impersonating && lastIsAssistant,
                 onStop = vm::stop,

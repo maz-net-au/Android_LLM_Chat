@@ -374,16 +374,34 @@ class ChatViewModel(
     private fun deriveTitle(text: String): String =
         if (text.length > 30) text.take(30) + "…" else text
 
-    /** Add a fresh variant to the last assistant message and regenerate it. */
+    /** Add a fresh variant to the last assistant message and regenerate it — or, when the
+     *  conversation ends on a bare user turn (e.g. an empty reply was discarded, or a reply
+     *  never landed), append a new assistant turn and generate a reply for it. This keeps a
+     *  stranded chat recoverable with one tap. */
     fun regenerate() {
         if (isBusy()) return
         val conv = base ?: return
-        val last = conv.messages.lastOrNull { it.role == Role.ASSISTANT && !it.isSceneImage } ?: return
         val prefixes = conv.character.usesNamePrefixes
+        val prefill = if (prefixes) "${conv.characterName}: " else ""
+        val lastReal = conv.messages.lastOrNull { !it.isSceneImage } ?: return
+        if (lastReal.role == Role.USER) {
+            // No trailing assistant to revariant: give the dangling user turn a reply.
+            val assistantId = IdGen.next()
+            val updated = conv.copy(
+                updatedAt = System.currentTimeMillis(),
+                messages = conv.messages + ChatMessage.assistant(assistantId, prefill),
+            )
+            local.update { it.copy(selectedMsgId = null) }
+            saveThen(updated) {
+                GenerationService.start(app, convId, assistantId, includePartial = prefixes, forceContinue = false, title = updated.title)
+            }
+            return
+        }
+        val last = conv.messages.lastOrNull { it.role == Role.ASSISTANT && !it.isSceneImage } ?: return
         val updated = conv.copy(
             updatedAt = System.currentTimeMillis(),
             messages = conv.messages.map {
-                if (it.id == last.id) it.addVariant(if (prefixes) "${conv.characterName}: " else "") else it
+                if (it.id == last.id) it.addVariant(prefill) else it
             },
         )
         local.update { it.copy(selectedMsgId = null) }

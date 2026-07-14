@@ -178,9 +178,11 @@ class GenerationService : Service() {
         }
     }
 
-    /** An empty reply survived every retry: drop it instead of storing a blank turn.
-     *  A regenerated variant falls back to the previously shown one; a fresh reply
-     *  (its only variant) removes the assistant message outright. */
+    /** An empty reply survived every retry: don't store a blank turn.
+     *  A regenerated variant falls back to the previously shown one. A fresh reply
+     *  (its only variant) keeps a visible error in place — mirroring the network-error
+     *  path — rather than deleting the message, which would strand the prompting user
+     *  turn at the tail with no assistant bubble to Regenerate/Delete. */
     private suspend fun discardEmpty(repo: ConversationRepository, convId: Long, targetId: Long) {
         val conv = repo.get(convId) ?: return
         val msg = conv.messages.firstOrNull { it.id == targetId } ?: return
@@ -194,7 +196,9 @@ class GenerationService : Service() {
                 else it
             }
         } else {
-            conv.messages.filter { it.id != targetId }
+            conv.messages.map {
+                if (it.id == targetId) it.withText(EMPTY_REPLY_NOTICE) else it
+            }
         }
         repo.save(conv.copy(updatedAt = System.currentTimeMillis(), messages = messages))
     }
@@ -284,6 +288,9 @@ class GenerationService : Service() {
         private const val WRITE_INTERVAL_MS = 150L
         /** Re-request this many times when a stream completes with no content. */
         private const val MAX_EMPTY_RETRIES = 2
+        /** Kept in a fresh reply's bubble when every retry came back empty, so the turn
+         *  stays regenerable instead of vanishing and stranding the user's prompt. */
+        private const val EMPTY_REPLY_NOTICE = "⚠️ The model returned an empty reply."
 
         private const val ACTION_START = "net.maz.llamachat.action.START_GENERATION"
         private const val ACTION_CANCEL = "net.maz.llamachat.action.CANCEL_GENERATION"
