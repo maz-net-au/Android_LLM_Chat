@@ -18,6 +18,8 @@ import net.maz.llamachat.data.net.ImageUrlPart
 import net.maz.llamachat.data.net.InputAudio
 import net.maz.llamachat.data.net.InputAudioPart
 import java.io.File
+import java.io.FilterOutputStream
+import java.io.OutputStream
 import java.util.Base64
 
 /**
@@ -108,12 +110,25 @@ class AttachmentStore(private val context: Context) {
         atts.forEach { fileFor(convId, it).delete() }
     }
 
-    /** Base64 of [att]'s raw bytes for a full backup export, or null if the file is
-     *  missing. Unlike [toContentPart] this is the plain file content, no data: URI. */
-    fun readBase64(convId: Long, att: Attachment): String? {
+    /** Whether [att]'s backing file exists (its bytes are available to export). */
+    fun hasFile(convId: Long, att: Attachment): Boolean = fileFor(convId, att).exists()
+
+    /**
+     * Stream [att]'s raw bytes as standard base64 (no line breaks, no data: URI) straight
+     * into [out] for a full backup export, without ever holding the whole file or its base64
+     * in memory. Does NOT close [out]. Returns false if the file is missing or unreadable.
+     */
+    fun streamBase64Into(convId: Long, att: Attachment, out: OutputStream): Boolean {
         val file = fileFor(convId, att)
-        if (!file.exists()) return null
-        return runCatching { Base64.getEncoder().encodeToString(file.readBytes()) }.getOrNull()
+        if (!file.exists()) return false
+        return runCatching {
+            // wrap() base64-encodes as bytes flow through; close it to flush the final
+            // padding, but keep [out] open for the rest of the JSON (NonClosingStream).
+            val encoder = Base64.getEncoder().wrap(NonClosingStream(out))
+            file.inputStream().use { it.copyTo(encoder) }
+            encoder.close()
+            true
+        }.getOrDefault(false)
     }
 
     /** Restore [att]'s bytes from a backup's [b64] into the conversation's dir. Best-effort:
@@ -148,6 +163,16 @@ class AttachmentStore(private val context: Context) {
                 json.encodeToJsonElement(InputAudioPart(inputAudio = InputAudio(data = b64, format = "wav")))
             else -> null
         }
+    }
+
+    /**
+     * Wraps [out] so closing the base64 encoder (to flush its padding) does not close the
+     * underlying stream. [write] is overridden to delegate in bulk — the [FilterOutputStream]
+     * default rewrites byte-by-byte, which would crawl through image-sized payloads.
+     */
+    private class NonClosingStream(private val out: OutputStream) : FilterOutputStream(out) {
+        override fun write(b: ByteArray, off: Int, len: Int) = out.write(b, off, len)
+        override fun close() = flush()
     }
 
     private companion object {

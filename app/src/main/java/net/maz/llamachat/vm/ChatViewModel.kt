@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import net.maz.llamachat.LlamaChatApp
 import net.maz.llamachat.data.ConversationRepository
 import net.maz.llamachat.data.IdGen
@@ -727,8 +728,27 @@ class ChatViewModel(
 
     // ---- backup ------------------------------------------------------------
 
-    /** The current conversation serialized as a backup file, or null if not loaded yet. */
-    fun backupJson(): String? = base?.let { BackupCodec.encode(it, app.attachmentStore) }
+    /** Stream the current conversation to the backup file at [uri], off the main thread.
+     *  [onDone] reports success on the main thread; false if not loaded yet or the write
+     *  failed. Attachment bytes are streamed to disk (see [BackupCodec.encodeTo]) so an
+     *  image-heavy conversation doesn't OOM. */
+    fun backup(uri: Uri, onDone: (Boolean) -> Unit) {
+        val conv = base
+        if (conv == null) {
+            onDone(false)
+            return
+        }
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    app.contentResolver.openOutputStream(uri)?.use {
+                        BackupCodec.encodeTo(it, conv, app.attachmentStore)
+                    } ?: error("could not open output stream")
+                }.isSuccess
+            }
+            onDone(ok)
+        }
+    }
 
     // ---- chat menu ---------------------------------------------------------
 

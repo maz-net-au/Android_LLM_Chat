@@ -227,14 +227,10 @@ fun ChatScreen(
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json"),
     ) { uri: Uri? ->
-        val text = vm.backupJson()
-        if (uri == null || text == null) return@rememberLauncherForActivityResult
-        runCatching {
-            context.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) }
-        }.onSuccess {
-            Toast.makeText(context, "Conversation exported", Toast.LENGTH_SHORT).show()
-        }.onFailure {
-            Toast.makeText(context, "Export failed", Toast.LENGTH_SHORT).show()
+        if (uri == null) return@rememberLauncherForActivityResult
+        vm.backup(uri) { ok ->
+            val msg = if (ok) "Conversation exported" else "Export failed"
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
         }
     }
 

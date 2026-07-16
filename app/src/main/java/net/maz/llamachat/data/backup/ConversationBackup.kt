@@ -1,12 +1,17 @@
 package net.maz.llamachat.data.backup
 
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromStream
 import net.maz.llamachat.data.attach.AttachmentStore
 import net.maz.llamachat.data.model.ChatMessage
 import net.maz.llamachat.data.model.Conversation
 import net.maz.llamachat.data.model.SamplingOverrides
+import java.io.BufferedOutputStream
+import java.io.InputStream
+import java.io.OutputStream
 
 /**
  * ON-DISK BACKUP FORMAT — read this before changing anything in this file.
@@ -20,11 +25,11 @@ import net.maz.llamachat.data.model.SamplingOverrides
  *   - Add new fields ONLY with a default value, so older files (which lack them) still
  *     decode. NEVER rename, remove, or retype an existing field, change its meaning, or
  *     make an existing field required.
- *   - Import is best-effort: [BackupCodec.decode] uses ignoreUnknownKeys plus a default
+ *   - Import is best-effort: [BackupCodec.decodeFrom] uses ignoreUnknownKeys plus a default
  *     for every field, so a newer file also loads on an older app (minus unknown fields),
  *     and a partial file loads what it can rather than failing.
  *   - Bump [BACKUP_VERSION] only for a genuinely breaking change, and add an explicit
- *     upgrade path in [BackupCodec.decode].
+ *     upgrade path in [BackupCodec.decodeFrom].
  *   - If a change here is NOT backwards compatible, STOP and ask the user before proceeding.
  *
  * Note: [BackupConversation] reuses the domain [ChatMessage] and [SamplingOverrides]
@@ -62,7 +67,12 @@ data class BackupConversation(
     val messages: List<ChatMessage> = emptyList(),
     /** Full backup: raw attachment bytes, base64-keyed by [net.maz.llamachat.data.model.Attachment.fileName]
      *  (unique within a conversation). Empty for text-only/legacy files, in which case the
-     *  attachment metadata still restores but the images/audio won't resolve. */
+     *  attachment metadata still restores but the images/audio won't resolve.
+     *
+     *  On EXPORT this map is populated straight from the file rather than into a
+     *  [BackupConversation]: [BackupCodec.encodeTo] serializes the metadata with this left
+     *  empty and streams the base64 in afterwards, so a conversation full of images is never
+     *  held in memory all at once (it used to OOM). On IMPORT it is decoded normally. */
     val attachmentBytes: Map<String, String> = emptyMap(),
 ) {
     /** Restore to a domain conversation, keeping the original [id] (overwrite-by-id). */
@@ -81,31 +91,23 @@ data class BackupConversation(
     )
 
     companion object {
-        /** Snapshot [c] into the backup format, pulling every attachment's bytes out of
-         *  [store] and inlining them as base64 so the file is fully self-contained. */
-        fun fromDomain(c: Conversation, store: AttachmentStore): BackupConversation {
-            val bytes = LinkedHashMap<String, String>()
-            for (m in c.messages) {
-                for (att in m.attachments) {
-                    store.readBase64(c.id, att)?.let { bytes[att.fileName] = it }
-                }
-            }
-            return BackupConversation(
-                id = c.id,
-                title = c.title,
-                characterName = c.characterName,
-                presetName = c.presetName,
-                model = c.model,
-                createdAt = c.createdAt,
-                updatedAt = c.updatedAt,
-                userName = c.userName,
-                sampling = c.sampling,
-                summary = c.summary,
-                // Keep the attachment metadata; its bytes ride along in [attachmentBytes].
-                messages = c.messages,
-                attachmentBytes = bytes,
-            )
-        }
+        /** Snapshot [c]'s metadata (everything but the attachment bytes) into the backup
+         *  format. The bytes are streamed in separately by [BackupCodec.encodeTo] to keep
+         *  peak memory bounded, so [attachmentBytes] is deliberately left empty here. */
+        fun metadataOnly(c: Conversation): BackupConversation = BackupConversation(
+            id = c.id,
+            title = c.title,
+            characterName = c.characterName,
+            presetName = c.presetName,
+            model = c.model,
+            createdAt = c.createdAt,
+            updatedAt = c.updatedAt,
+            userName = c.userName,
+            sampling = c.sampling,
+            summary = c.summary,
+            // Keep the attachment metadata; its bytes are streamed in by encodeTo.
+            messages = c.messages,
+        )
     }
 }
 
@@ -120,18 +122,58 @@ object BackupCodec {
         prettyPrint = true
     }
 
-    fun encode(conv: Conversation, store: AttachmentStore): String = json.encodeToString(
-        ConversationBackup(
-            exportedAt = System.currentTimeMillis(),
-            conversation = BackupConversation.fromDomain(conv, store),
-        ),
-    )
+    /**
+     * Write [conv]'s backup to [out] (same on-disk JSON as before), streaming attachment
+     * bytes straight from disk so a conversation full of images never sits in memory all at
+     * once — the old string-building [encode] OOM-ed on large exports.
+     *
+     * Strategy: serialize everything EXCEPT the attachment bytes to a small in-memory string
+     * (metadata + message text only), which ends in an empty `"attachmentBytes": {}` object;
+     * then split that object open and stream each attachment's base64 between the braces.
+     * [out] is not closed (the caller owns it).
+     */
+    fun encodeTo(out: OutputStream, conv: Conversation, store: AttachmentStore) {
+        val skeleton = json.encodeToString(
+            ConversationBackup(
+                exportedAt = System.currentTimeMillis(),
+                conversation = BackupConversation.metadataOnly(conv),
+            ),
+        )
+        // Locate the empty attachmentBytes object and split it into `{` + `}`. It is the
+        // last field, so lastIndexOf can't be fooled by a message that mentions the key.
+        val keyAt = skeleton.lastIndexOf("\"attachmentBytes\"")
+        val open = skeleton.indexOf('{', keyAt)
+        val close = skeleton.indexOf('}', open)
+
+        val sink = BufferedOutputStream(out)
+        sink.write(skeleton.substring(0, open + 1).encodeToByteArray())
+
+        val seen = HashSet<String>()
+        var first = true
+        for (m in conv.messages) {
+            for (att in m.attachments) {
+                if (!store.hasFile(conv.id, att) || !seen.add(att.fileName)) continue
+                sink.write((if (first) "\n" else ",\n").encodeToByteArray())
+                first = false
+                // Reuse the serializer for the key so the file name is correctly quoted.
+                sink.write(json.encodeToString(att.fileName).encodeToByteArray())
+                sink.write(": \"".encodeToByteArray())
+                store.streamBase64Into(conv.id, att, sink)
+                sink.write("\"".encodeToByteArray())
+            }
+        }
+        if (!first) sink.write("\n".encodeToByteArray())
+        sink.write(skeleton.substring(close).encodeToByteArray())
+        sink.flush()
+    }
 
     /**
-     * Best-effort decode. Returns the conversation payload, or null only when the text
-     * isn't a usable backup at all. Individual missing/unknown fields are tolerated via
-     * defaults; they don't fail the whole import.
+     * Best-effort decode from [input] (streamed, so the whole file isn't first read into a
+     * String). Returns the conversation payload, or null only when the input isn't a usable
+     * backup at all. Individual missing/unknown fields are tolerated via defaults; they don't
+     * fail the whole import. [input] is not closed (the caller owns it).
      */
-    fun decode(text: String): BackupConversation? =
-        runCatching { json.decodeFromString<ConversationBackup>(text).conversation }.getOrNull()
+    @OptIn(ExperimentalSerializationApi::class)
+    fun decodeFrom(input: InputStream): BackupConversation? =
+        runCatching { json.decodeFromStream<ConversationBackup>(input).conversation }.getOrNull()
 }

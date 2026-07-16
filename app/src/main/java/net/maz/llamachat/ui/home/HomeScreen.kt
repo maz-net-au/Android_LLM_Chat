@@ -85,14 +85,7 @@ fun HomeScreen(
         ActivityResultContracts.OpenDocument(),
     ) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
-        val text = runCatching {
-            context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-        }.getOrNull()
-        if (text == null) {
-            Toast.makeText(context, "Couldn't read file", Toast.LENGTH_SHORT).show()
-            return@rememberLauncherForActivityResult
-        }
-        vm.import(text) { result ->
+        vm.import(uri) { result ->
             val msg = when (result) {
                 is ImportResult.Restored ->
                     if (result.missingCharacter != null)
@@ -111,12 +104,9 @@ fun HomeScreen(
         val conv = pendingExport
         pendingExport = null
         if (uri == null || conv == null) return@rememberLauncherForActivityResult
-        runCatching {
-            context.contentResolver.openOutputStream(uri)?.use { it.write(vm.exportJson(conv).toByteArray()) }
-        }.onSuccess {
-            Toast.makeText(context, "Conversation exported", Toast.LENGTH_SHORT).show()
-        }.onFailure {
-            Toast.makeText(context, "Export failed", Toast.LENGTH_SHORT).show()
+        vm.export(conv, uri) { ok ->
+            val msg = if (ok) "Conversation exported" else "Export failed"
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
         }
     }
 
