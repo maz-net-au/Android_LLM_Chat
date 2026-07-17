@@ -13,9 +13,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 import net.maz.llamachat.LlamaChatApp
-import net.maz.llamachat.data.comfy.ComfyJob
 import net.maz.llamachat.data.comfy.FlowType
+import net.maz.llamachat.data.comfy.JobInput
 import net.maz.llamachat.data.db.GalleryItemEntity
 
 /** Backs both the gallery grid and the full-screen viewer. */
@@ -23,6 +24,8 @@ class GalleryViewModel(
     private val app: LlamaChatApp,
     initialTab: FlowType?,
 ) : ViewModel() {
+
+    private val json = Json { ignoreUnknownKeys = true }
 
     /** Selected flow-type filter; null = All. */
     private val _tab = MutableStateFlow(initialTab)
@@ -45,9 +48,13 @@ class GalleryViewModel(
 
     suspend fun getItem(id: Long): GalleryItemEntity? = app.galleryRepository.getById(id)
 
-    /** The job that produced [itemId], if it's still around and can be regenerated. */
-    fun regenerableJob(itemId: Long): ComfyJob? =
-        app.comfyJobs.jobForItem(itemId)?.takeIf { it.canRegenerate }
+    /** The request that produced [item], decoded from its persisted snapshot, for
+     *  showing the prompt. Empty for items generated before requests were saved. */
+    fun inputsFor(item: GalleryItemEntity): List<JobInput> =
+        runCatching { json.decodeFromString<List<JobInput>>(item.inputsJson) }.getOrDefault(emptyList())
+
+    /** Whether [item] carries enough to reopen the form and regenerate. */
+    fun canRegenerate(item: GalleryItemEntity): Boolean = item.workflowId >= 0
 
     fun delete(item: GalleryItemEntity, onDeleted: () -> Unit = {}) {
         viewModelScope.launch {

@@ -19,4 +19,12 @@ data class GalleryItemEntity(
     val fileName: String,
     /** e.g. image/png, video/mp4, audio/flac — routes viewer and export. */
     val mimeType: String,
+    /** Installed workflow that produced this; -1 = unknown (can't regenerate).
+     *  A plain id snapshot: if the workflow is later removed, regeneration just
+     *  fails gracefully — the row is never orphaned. */
+    val workflowId: Long = -1L,
+    /** The request that generated this file: a JSON-encoded `List<JobInput>`
+     *  (the scalar form values), so the prompt is viewable long after the
+     *  producing job is gone and the form can reopen pre-filled. */
+    val inputsJson: String = "[]",
 )

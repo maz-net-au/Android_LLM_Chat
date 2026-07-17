@@ -8,7 +8,10 @@ import android.os.Environment
 import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import net.maz.llamachat.data.IdGen
+import net.maz.llamachat.data.comfy.JobInput
 import net.maz.llamachat.data.db.GalleryItemEntity
 import java.io.File
 
@@ -19,6 +22,8 @@ import java.io.File
  * (Pictures/Movies/Music) so other apps can see it.
  */
 class GalleryStore(private val context: Context) {
+
+    private val json = Json { ignoreUnknownKeys = true }
 
     private fun dir(): File = File(context.filesDir, "gallery").apply { mkdirs() }
 
@@ -33,6 +38,8 @@ class GalleryStore(private val context: Context) {
         flowType: String,
         workflowName: String,
         comfyFilename: String,
+        workflowId: Long = -1L,
+        inputs: List<JobInput> = emptyList(),
     ): Pair<GalleryItemEntity, File> {
         val id = IdGen.next()
         val ext = comfyFilename.substringAfterLast('.', "").lowercase()
@@ -43,6 +50,8 @@ class GalleryStore(private val context: Context) {
             createdAt = System.currentTimeMillis(),
             fileName = if (ext.isEmpty()) "$id" else "$id.$ext",
             mimeType = MIME_BY_EXT[ext] ?: "application/octet-stream",
+            workflowId = workflowId,
+            inputsJson = json.encodeToString(inputs),
         )
         return item to fileFor(item)
     }

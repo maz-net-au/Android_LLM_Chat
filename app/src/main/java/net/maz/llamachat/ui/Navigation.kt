@@ -63,8 +63,8 @@ object Routes {
     fun editCharacter(name: String? = null) =
         if (name == null) CHARACTER_EDIT else "$CHARACTER_EDIT?name=${Uri.encode(name)}"
     fun workflows(flowType: FlowType) = "$WORKFLOWS/${flowType.key}"
-    fun workflowForm(workflowId: Long, fromJobId: Long = -1L) =
-        "$WORKFLOW_FORM/$workflowId?fromJob=$fromJobId"
+    fun workflowForm(workflowId: Long, fromJobId: Long = -1L, fromItemId: Long = -1L) =
+        "$WORKFLOW_FORM/$workflowId?fromJob=$fromJobId&fromItem=$fromItemId"
     fun gallery(flowType: FlowType? = null) =
         if (flowType == null) GALLERY else "$GALLERY?flowType=${flowType.key}"
     fun viewer(itemId: Long, flowType: FlowType? = null) =
@@ -132,23 +132,25 @@ fun LlamaChatNavHost() {
         }
 
         composable(
-            route = "${Routes.WORKFLOW_FORM}/{workflowId}?fromJob={jobId}",
+            route = "${Routes.WORKFLOW_FORM}/{workflowId}?fromJob={jobId}&fromItem={itemId}",
             arguments = listOf(
                 navArgument("workflowId") { type = NavType.LongType },
                 navArgument("jobId") { type = NavType.LongType; defaultValue = -1L },
+                navArgument("itemId") { type = NavType.LongType; defaultValue = -1L },
             ),
         ) { backStackEntry ->
             val workflowId = backStackEntry.arguments?.getLong("workflowId") ?: return@composable
             val fromJobId = backStackEntry.arguments?.getLong("jobId") ?: -1L
+            val fromItemId = backStackEntry.arguments?.getLong("itemId") ?: -1L
             val vm: WorkflowFormViewModel =
-                viewModel(factory = WorkflowFormViewModel.factory(app, workflowId, fromJobId))
+                viewModel(factory = WorkflowFormViewModel.factory(app, workflowId, fromJobId, fromItemId))
             WorkflowFormScreen(
                 vm = vm,
                 // Land on the queue so the new job's progress is immediately visible;
                 // back returns to the picker.
                 onSubmitted = {
                     navController.navigate(Routes.QUEUE) {
-                        popUpTo("${Routes.WORKFLOW_FORM}/{workflowId}?fromJob={jobId}") { inclusive = true }
+                        popUpTo("${Routes.WORKFLOW_FORM}/{workflowId}?fromJob={jobId}&fromItem={itemId}") { inclusive = true }
                     }
                 },
                 onBack = { navController.popBackStack() },
@@ -197,8 +199,8 @@ fun LlamaChatNavHost() {
             ViewerScreen(
                 vm = vm,
                 itemId = itemId,
-                onRegenerate = { job ->
-                    navController.navigate(Routes.workflowForm(job.workflowId, job.id))
+                onRegenerate = { item ->
+                    navController.navigate(Routes.workflowForm(item.workflowId, fromItemId = item.id))
                 },
                 onBack = { navController.popBackStack() },
                 onOpenSettings = openSettings,

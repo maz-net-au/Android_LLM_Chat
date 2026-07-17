@@ -216,7 +216,9 @@ class ComfyGenerationService : Service() {
     private suspend fun downloadToGallery(job: ComfyJob, refs: List<ComfyFileRef>, s: Settings) {
         val controller = app.comfyJobs
         for (ref in refs) {
-            val (item, dest) = app.galleryRepository.store.newItem(job.flowType, job.workflowName, ref.filename)
+            val (item, dest) = app.galleryRepository.store.newItem(
+                job.flowType, job.workflowName, ref.filename, job.workflowId, job.inputs,
+            )
             app.comfyClient.download(s.ip, s.comfyPort, ref, dest)
                 .getOrElse { fail(job.id, it.message ?: "Download failed"); return }
             app.galleryRepository.insert(item)

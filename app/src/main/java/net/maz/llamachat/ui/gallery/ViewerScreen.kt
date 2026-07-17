@@ -15,9 +15,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -48,7 +51,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.io.File
-import net.maz.llamachat.data.comfy.ComfyJob
+import net.maz.llamachat.data.comfy.JobInput
+import net.maz.llamachat.data.db.GalleryItemEntity
 import net.maz.llamachat.ui.components.DcAppBar
 import net.maz.llamachat.ui.components.ZoomableImage
 import net.maz.llamachat.ui.theme.DcColors
@@ -65,7 +69,7 @@ import net.maz.llamachat.vm.GalleryViewModel
 fun ViewerScreen(
     vm: GalleryViewModel,
     itemId: Long,
-    onRegenerate: (ComfyJob) -> Unit,
+    onRegenerate: (GalleryItemEntity) -> Unit,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
@@ -91,13 +95,14 @@ fun ViewerScreen(
         pageCount = { items.size },
     )
     val current = items.getOrNull(pagerState.currentPage)
-    val regenJob = remember(current) { current?.let { vm.regenerableJob(it.id) } }
 
     // Popped-empty is handled above; nothing more to show once every item is gone.
     if (current == null) {
         LaunchedEffect(Unit) { onBack() }
         return
     }
+
+    val requestInputs = remember(current) { vm.inputsFor(current) }
 
     // MediaStore is permissionless from API 29; 26–28 needs the legacy write
     // permission granted at the moment of export.
@@ -138,55 +143,59 @@ fun ViewerScreen(
             )
         }
 
+        if (requestInputs.isNotEmpty()) {
+            RequestDetails(requestInputs)
+        }
+
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
-            regenJob?.let { job ->
-                    Button(
-                        onClick = { onRegenerate(job) },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = DcColors.SurfaceTint,
-                            contentColor = DcColors.Primary,
-                        ),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth().height(46.dp),
-                    ) {
-                        Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Regenerate", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    }
-                    Spacer(Modifier.height(12.dp))
+            if (vm.canRegenerate(current)) {
+                Button(
+                    onClick = { onRegenerate(current) },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = DcColors.SurfaceTint,
+                        contentColor = DcColors.Primary,
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth().height(46.dp),
+                ) {
+                    Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Regenerate", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 }
-                Row(Modifier.fillMaxWidth()) {
-                    Button(
-                        onClick = {
-                            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-                                permissionLauncher.launch(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                            } else {
-                                vm.export(current)
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = DcColors.Primary,
-                            contentColor = Color.White,
-                        ),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.weight(1f).height(46.dp),
-                    ) {
-                        Text("Save", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Button(
-                        onClick = { confirmDelete = true },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = DcColors.SurfaceTint,
-                            contentColor = DcColors.Error,
-                        ),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.weight(1f).height(46.dp),
-                    ) {
-                        Text("Delete", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    }
+                Spacer(Modifier.height(12.dp))
+            }
+            Row(Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = {
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                            permissionLauncher.launch(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                        } else {
+                            vm.export(current)
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = DcColors.Primary,
+                        contentColor = Color.White,
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.weight(1f).height(46.dp),
+                ) {
+                    Text("Save", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                }
+                Spacer(Modifier.width(12.dp))
+                Button(
+                    onClick = { confirmDelete = true },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = DcColors.SurfaceTint,
+                        contentColor = DcColors.Error,
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.weight(1f).height(46.dp),
+                ) {
+                    Text("Delete", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 }
             }
+        }
     }
 
     if (confirmDelete) {
@@ -206,6 +215,43 @@ fun ViewerScreen(
                 TextButton(onClick = { confirmDelete = false }) { Text("Cancel") }
             },
         )
+    }
+}
+
+/**
+ * The generating request, snapshotted onto the item: the scalar form values that
+ * produced this file. Shown so the prompt is legible long after the job is gone;
+ * scrolls when there are many fields.
+ */
+@Composable
+private fun RequestDetails(inputs: List<JobInput>) {
+    Text(
+        "Request",
+        color = Color.White.copy(alpha = 0.5f),
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp),
+    )
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(max = 160.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 2.dp),
+    ) {
+        inputs.forEach { input ->
+            Text(
+                input.input,
+                color = Color.White.copy(alpha = 0.5f),
+                fontSize = 11.sp,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            Text(
+                input.value,
+                color = Color.White.copy(alpha = 0.85f),
+                fontSize = 13.sp,
+            )
+        }
     }
 }
 

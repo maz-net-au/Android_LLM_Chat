@@ -66,9 +66,14 @@ data class WorkflowFormUiState(
 class WorkflowFormViewModel(
     private val app: LlamaChatApp,
     private val workflowId: Long,
-    /** When regenerating: the finished job whose values seed the form (-1 = fresh). */
+    /** When regenerating from the queue: the live job whose values seed the form. */
     private val fromJobId: Long = -1L,
+    /** When regenerating from the gallery: the persisted item whose stored request
+     *  seeds the form. Survives restarts; takes precedence over [fromJobId]. */
+    private val fromItemId: Long = -1L,
 ) : ViewModel() {
+
+    private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
 
     private val _state = MutableStateFlow(WorkflowFormUiState())
     val state = _state.asStateFlow()
@@ -101,14 +106,18 @@ class WorkflowFormViewModel(
         outputField = config.output.field
         val base = store.baseEnums()
 
-        // When regenerating, seed each field from the source job's values (except
-        // seeds, which reroll) instead of the graph's baked-in defaults.
-        val prefill: Map<Pair<String, String>, String> = fromJobId
-            .takeIf { it >= 0 }
-            ?.let { id -> app.comfyJobs.jobs.value.firstOrNull { it.id == id } }
-            ?.inputs
-            ?.associate { (it.nodeTitle to it.input) to it.value }
-            ?: emptyMap()
+        // When regenerating, seed each field from the source request's values (except
+        // seeds, which reroll) instead of the graph's baked-in defaults. A gallery
+        // item's persisted request wins over a live job, so old items still prefill.
+        val sourceInputs: List<JobInput>? = when {
+            fromItemId >= 0 -> app.galleryRepository.getById(fromItemId)?.let { item ->
+                runCatching { json.decodeFromString<List<JobInput>>(item.inputsJson) }.getOrNull()
+            }
+            fromJobId >= 0 -> app.comfyJobs.jobs.value.firstOrNull { it.id == fromJobId }?.inputs
+            else -> null
+        }
+        val prefill: Map<Pair<String, String>, String> =
+            sourceInputs?.associate { (it.nodeTitle to it.input) to it.value } ?: emptyMap()
 
         val fields = config.fields.map { spec ->
             val type = FieldType.fromWire(spec.type)
@@ -264,9 +273,10 @@ class WorkflowFormViewModel(
         /** Kept within JSON's safe-integer range (2^53-1) so any tool can read it back. */
         private const val MAX_SEED = 0x1F_FFFF_FFFF_FFFFL
 
-        fun factory(app: LlamaChatApp, workflowId: Long, fromJobId: Long = -1L) = viewModelFactory {
-            initializer { WorkflowFormViewModel(app, workflowId, fromJobId) }
-        }
+        fun factory(app: LlamaChatApp, workflowId: Long, fromJobId: Long = -1L, fromItemId: Long = -1L) =
+            viewModelFactory {
+                initializer { WorkflowFormViewModel(app, workflowId, fromJobId, fromItemId) }
+            }
 
         private fun randomSeed(): String = Random.nextLong(0, MAX_SEED).toString()
     }
