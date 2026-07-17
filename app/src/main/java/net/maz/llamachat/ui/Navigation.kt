@@ -168,6 +168,9 @@ fun LlamaChatNavHost() {
             GalleryScreen(
                 vm = vm,
                 onOpenItem = { id, flowType -> navController.navigate(Routes.viewer(id, flowType)) },
+                onRegenerate = { item ->
+                    navController.navigate(Routes.workflowForm(item.workflowId, fromItemId = item.id))
+                },
                 onBack = { navController.popBackStack() },
                 onOpenSettings = openSettings,
             )

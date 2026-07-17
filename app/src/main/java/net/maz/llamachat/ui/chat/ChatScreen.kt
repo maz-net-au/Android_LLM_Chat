@@ -14,9 +14,11 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -87,9 +89,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
@@ -1092,6 +1096,7 @@ private fun PendingImagePreview(file: File, onRemove: () -> Unit) {
  * failure, or the finished image (tap to open the zoomable viewer). Left-aligned
  * like an assistant message; never sent to the model.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SceneImageItem(
     message: ChatMessage,
@@ -1105,6 +1110,13 @@ private fun SceneImageItem(
     onDelete: () -> Unit,
 ) {
     val meta = message.sceneImage ?: return
+    val haptics = LocalHapticFeedback.current
+    // Long-press opens Regenerate/Delete without opening (or revealing) the image.
+    var menuOpen by remember { mutableStateOf(false) }
+    val openMenu = {
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        menuOpen = true
+    }
     Row(
         modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
         horizontalArrangement = Arrangement.Start,
@@ -1112,19 +1124,25 @@ private fun SceneImageItem(
         Column(Modifier.fillMaxWidth(0.85f).widthIn(max = 600.dp)) {
             when {
                 meta.status == SceneImageMeta.STATUS_DONE && file != null && file.exists() && !revealed -> {
-                    SceneSpoilerCover(onReveal = onReveal)
+                    Box {
+                        SceneSpoilerCover(onReveal = onReveal, onLongPress = openMenu)
+                        SceneImageMenu(menuOpen, { menuOpen = false }, onRetry, onDelete)
+                    }
                 }
                 meta.status == SceneImageMeta.STATUS_DONE && file != null && file.exists() -> {
-                    AsyncImage(
-                        model = file,
-                        contentDescription = "Scene image: ${meta.focus}",
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .widthIn(max = 320.dp)
-                            .heightIn(max = 320.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable(onClick = onOpen),
-                    )
+                    Box {
+                        AsyncImage(
+                            model = file,
+                            contentDescription = "Scene image: ${meta.focus}",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .widthIn(max = 320.dp)
+                                .heightIn(max = 320.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .combinedClickable(onClick = onOpen, onLongClick = openMenu),
+                        )
+                        SceneImageMenu(menuOpen, { menuOpen = false }, onRetry, onDelete)
+                    }
                 }
                 meta.status == SceneImageMeta.STATUS_DONE -> SceneImageCard {
                     // Bytes are gone (e.g. an imported backup) — offer regenerate/delete.
@@ -1166,14 +1184,15 @@ private fun SceneImageItem(
 /** Opaque "tap to reveal" placeholder shown in place of a finished scene image until the
  *  user taps it. A real cover (not a blur) so nothing of the image leaks, and it works on
  *  every supported API level (Modifier.blur is a no-op below API 31). */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun SceneSpoilerCover(onReveal: () -> Unit) {
+private fun SceneSpoilerCover(onReveal: () -> Unit, onLongPress: () -> Unit) {
     Column(
         modifier = Modifier
             .size(220.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(DcColors.SurfaceTint)
-            .clickable(onClick = onReveal),
+            .combinedClickable(onClick = onReveal, onLongClick = onLongPress),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -1186,6 +1205,29 @@ private fun SceneSpoilerCover(onReveal: () -> Unit) {
         Spacer(Modifier.height(8.dp))
         Text("Tap to reveal", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = DcColors.OnSurface)
         Text("Scene image", fontSize = 11.sp, color = DcColors.OnSurfaceFaint)
+    }
+}
+
+/** Long-press menu for a finished scene image: the same Regenerate/Delete the
+ *  viewer offers, reachable without opening (or revealing) the image. */
+@Composable
+private fun SceneImageMenu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    onRegenerate: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        DropdownMenuItem(
+            text = { Text("Regenerate", fontSize = 14.sp, color = DcColors.OnSurface) },
+            leadingIcon = { Icon(Icons.Filled.Refresh, contentDescription = null, tint = DcColors.OnSurfaceVariant, modifier = Modifier.size(19.dp)) },
+            onClick = { onDismiss(); onRegenerate() },
+        )
+        DropdownMenuItem(
+            text = { Text("Delete", fontSize = 14.sp, color = DcColors.Error) },
+            leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = DcColors.Error, modifier = Modifier.size(19.dp)) },
+            onClick = { onDismiss(); onDelete() },
+        )
     }
 }
 
