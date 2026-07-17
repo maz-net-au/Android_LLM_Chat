@@ -6,6 +6,7 @@ import android.widget.MediaController
 import android.widget.VideoView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
@@ -31,9 +34,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -46,7 +49,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.io.File
 import net.maz.llamachat.data.comfy.ComfyJob
-import net.maz.llamachat.data.db.GalleryItemEntity
 import net.maz.llamachat.ui.components.DcAppBar
 import net.maz.llamachat.ui.components.ZoomableImage
 import net.maz.llamachat.ui.theme.DcColors
@@ -58,6 +60,7 @@ import net.maz.llamachat.vm.GalleryViewModel
  * via a minimal [MediaPlayer] toggle — both adequate for local files without
  * pulling Media3 into the pinned toolchain.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ViewerScreen(
     vm: GalleryViewModel,
@@ -66,34 +69,63 @@ fun ViewerScreen(
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
-    val item by produceState<GalleryItemEntity?>(null, itemId) { value = vm.getItem(itemId) }
-    val regenJob = remember(item) { item?.let { vm.regenerableJob(it.id) } }
+    // The whole tab's items are the swipe context: paging left/right moves between
+    // them without leaving the viewer. The list stays live, so deleting an item
+    // simply drops it and reveals the neighbour.
+    val items by vm.items.collectAsStateWithLifecycle()
     val exportMessage by vm.exportMessage.collectAsStateWithLifecycle()
     var confirmDelete by remember { mutableStateOf(false) }
 
+    // Wait for the list before building the pager so it can start on the tapped item.
+    if (items.isEmpty()) {
+        // Either still loading, or the last item was just deleted — pop in the latter case.
+        LaunchedEffect(Unit) { if (vm.getItem(itemId) == null) onBack() }
+        Column(Modifier.fillMaxSize().background(Color.Black)) {
+            DcAppBar(title = "", onBack = onBack, onOpenSettings = onOpenSettings)
+        }
+        return
+    }
+
+    val pagerState = rememberPagerState(
+        initialPage = items.indexOfFirst { it.id == itemId }.coerceAtLeast(0),
+        pageCount = { items.size },
+    )
+    val current = items.getOrNull(pagerState.currentPage)
+    val regenJob = remember(current) { current?.let { vm.regenerableJob(it.id) } }
+
+    // Popped-empty is handled above; nothing more to show once every item is gone.
+    if (current == null) {
+        LaunchedEffect(Unit) { onBack() }
+        return
+    }
+
     // MediaStore is permissionless from API 29; 26–28 needs the legacy write
     // permission granted at the moment of export.
-    val current = item
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { granted -> if (granted) current?.let(vm::export) }
+    ) { granted -> if (granted) vm.export(current) }
 
     DisposableEffect(Unit) {
         onDispose { vm.clearExportMessage() }
     }
 
     Column(Modifier.fillMaxSize().background(Color.Black)) {
-        DcAppBar(title = current?.workflowName ?: "", onBack = onBack, onOpenSettings = onOpenSettings)
+        DcAppBar(title = current.workflowName, onBack = onBack, onOpenSettings = onOpenSettings)
 
-        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            when {
-                current == null -> Text("Not found", color = Color.White, fontSize = 15.sp)
-                current.mimeType.startsWith("image/") -> ZoomableImage(
-                    model = vm.fileFor(current),
-                    contentDescription = current.workflowName,
-                )
-                current.mimeType.startsWith("video/") -> VideoPlayer(vm.fileFor(current))
-                else -> AudioPlayer(vm.fileFor(current))
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+        ) { page ->
+            val pageItem = items[page]
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                when {
+                    pageItem.mimeType.startsWith("image/") -> ZoomableImage(
+                        model = vm.fileFor(pageItem),
+                        contentDescription = pageItem.workflowName,
+                    )
+                    pageItem.mimeType.startsWith("video/") -> VideoPlayer(vm.fileFor(pageItem))
+                    else -> AudioPlayer(vm.fileFor(pageItem))
+                }
             }
         }
 
@@ -106,9 +138,8 @@ fun ViewerScreen(
             )
         }
 
-        if (current != null) {
-            Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                regenJob?.let { job ->
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            regenJob?.let { job ->
                     Button(
                         onClick = { onRegenerate(job) },
                         colors = ButtonDefaults.buttonColors(
@@ -156,10 +187,9 @@ fun ViewerScreen(
                     }
                 }
             }
-        }
     }
 
-    if (confirmDelete && current != null) {
+    if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
             title = { Text("Delete this item?") },
@@ -167,7 +197,9 @@ fun ViewerScreen(
             confirmButton = {
                 TextButton(onClick = {
                     confirmDelete = false
-                    vm.delete(current) { onBack() }
+                    // Drop the item; the pager reveals a neighbour, or the empty-list
+                    // guard pops the viewer when this was the last one.
+                    vm.delete(current)
                 }) { Text("Delete") }
             },
             dismissButton = {

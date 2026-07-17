@@ -1,8 +1,10 @@
 package net.maz.llamachat.ui.components
 
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -15,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -26,6 +29,11 @@ import coil.compose.AsyncImage
  * a 2.5× zoom. Panning is clamped so the image can't be dragged off-screen, and
  * releasing back to 1× re-centres it. Shared by the gallery viewer and the in-chat
  * scene-image viewer.
+ *
+ * The gesture handler is deliberately pager-friendly: at fit scale a single-finger
+ * horizontal drag is left unconsumed so an enclosing [androidx.compose.foundation.pager.HorizontalPager]
+ * can page between images. Two-finger pinches (zoom) and, once zoomed in, single-finger
+ * pans are consumed here.
  */
 @Composable
 fun ZoomableImage(model: Any?, contentDescription: String?, modifier: Modifier = Modifier) {
@@ -39,18 +47,29 @@ fun ZoomableImage(model: Any?, contentDescription: String?, modifier: Modifier =
         return Offset(o.x.coerceIn(-maxX, maxX), o.y.coerceIn(-maxY, maxY))
     }
 
-    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-        val newScale = (scale * zoomChange).coerceIn(1f, 5f)
-        scale = newScale
-        offset = if (newScale <= 1f) Offset.Zero else clamp(offset + panChange, newScale)
-    }
-
     Box(
         modifier
             .fillMaxSize()
             .clipToBounds()
             .onSizeChanged { boxSize = it }
-            .transformable(transformState)
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    do {
+                        val event = awaitPointerEvent()
+                        val zoom = event.calculateZoom()
+                        val pan = event.calculatePan()
+                        // Only handle (and consume) the gesture when it's a pinch or when
+                        // we're already zoomed in — otherwise leave it for the pager.
+                        if (event.changes.size >= 2 || scale > 1f) {
+                            val newScale = (scale * zoom).coerceIn(1f, 5f)
+                            scale = newScale
+                            offset = if (newScale <= 1f) Offset.Zero else clamp(offset + pan, newScale)
+                            event.changes.forEach { if (it.positionChanged()) it.consume() }
+                        }
+                    } while (event.changes.any { it.pressed })
+                }
+            }
             .pointerInput(Unit) {
                 detectTapGestures(onDoubleTap = {
                     if (scale > 1f) {

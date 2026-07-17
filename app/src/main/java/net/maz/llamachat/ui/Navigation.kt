@@ -67,7 +67,8 @@ object Routes {
         "$WORKFLOW_FORM/$workflowId?fromJob=$fromJobId"
     fun gallery(flowType: FlowType? = null) =
         if (flowType == null) GALLERY else "$GALLERY?flowType=${flowType.key}"
-    fun viewer(itemId: Long) = "$VIEWER/$itemId"
+    fun viewer(itemId: Long, flowType: FlowType? = null) =
+        "$VIEWER/$itemId?flowType=${flowType?.key ?: ""}"
 }
 
 @Composable
@@ -164,7 +165,7 @@ fun LlamaChatNavHost() {
                 viewModel(factory = GalleryViewModel.factory(app, initialTab))
             GalleryScreen(
                 vm = vm,
-                onOpenItem = { id -> navController.navigate(Routes.viewer(id)) },
+                onOpenItem = { id, flowType -> navController.navigate(Routes.viewer(id, flowType)) },
                 onBack = { navController.popBackStack() },
                 onOpenSettings = openSettings,
             )
@@ -184,11 +185,15 @@ fun LlamaChatNavHost() {
         }
 
         composable(
-            route = "${Routes.VIEWER}/{itemId}",
-            arguments = listOf(navArgument("itemId") { type = NavType.LongType }),
+            route = "${Routes.VIEWER}/{itemId}?flowType={flowType}",
+            arguments = listOf(
+                navArgument("itemId") { type = NavType.LongType },
+                navArgument("flowType") { type = NavType.StringType; defaultValue = "" },
+            ),
         ) { backStackEntry ->
             val itemId = backStackEntry.arguments?.getLong("itemId") ?: return@composable
-            val vm: GalleryViewModel = viewModel(factory = GalleryViewModel.factory(app))
+            val initialTab = FlowType.fromKey(backStackEntry.arguments?.getString("flowType").orEmpty())
+            val vm: GalleryViewModel = viewModel(factory = GalleryViewModel.factory(app, initialTab))
             ViewerScreen(
                 vm = vm,
                 itemId = itemId,

@@ -1,5 +1,6 @@
 package net.maz.llamachat.ui.chat
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -17,6 +18,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
@@ -55,6 +58,7 @@ import net.maz.llamachat.vm.ChatViewModel
  * with a new seed; either appends a NEW image to the chat (the original is kept)
  * and returns here. Delete removes this image and pops back.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SceneImageViewerScreen(
     vm: ChatViewModel,
@@ -65,22 +69,38 @@ fun SceneImageViewerScreen(
     val state by vm.ui.collectAsStateWithLifecycle()
     val app = LocalContext.current.applicationContext as LlamaChatApp
     val conversation = state.conversation
-    val message = conversation?.messages?.firstOrNull { it.id == messageId }
-    val meta = message?.sceneImage
-    val file = message?.attachments?.firstOrNull()?.let { app.attachmentStore.fileFor(vm.convId, it) }
 
-    // Pop only once the chat has loaded and the message is genuinely gone (deleted) —
-    // not on the first frame, before the conversation flow has emitted.
-    LaunchedEffect(conversation != null, message == null) {
-        if (conversation != null && message == null) onBack()
-    }
-    if (message == null || meta == null) {
-        // Loading (or just deleted): a plain black screen with a working back button.
+    if (conversation == null) {
+        // Still loading: a plain black screen with a working back button.
         Column(Modifier.fillMaxSize().background(Color.Black)) {
             DcAppBar(title = "Scene image", onBack = onBack, onOpenSettings = onOpenSettings)
         }
         return
     }
+
+    // Every scene image in this chat is the swipe context: paging left/right moves
+    // between them. The list is live, so deleting one reveals its neighbour.
+    val sceneMessages = conversation.messages.filter { it.sceneImage != null }
+    if (sceneMessages.isEmpty()) {
+        // The last scene image was deleted — leave the viewer.
+        LaunchedEffect(Unit) { onBack() }
+        Column(Modifier.fillMaxSize().background(Color.Black)) {
+            DcAppBar(title = "Scene image", onBack = onBack, onOpenSettings = onOpenSettings)
+        }
+        return
+    }
+
+    val pagerState = rememberPagerState(
+        initialPage = sceneMessages.indexOfFirst { it.id == messageId }.coerceAtLeast(0),
+        pageCount = { sceneMessages.size },
+    )
+    val message = sceneMessages.getOrNull(pagerState.currentPage)
+    if (message == null) {
+        LaunchedEffect(Unit) { onBack() }
+        return
+    }
+    val meta = message.sceneImage!!
+    val currentId = message.id
 
     var confirmDelete by remember { mutableStateOf(false) }
     var regenChoice by remember { mutableStateOf(false) }
@@ -90,15 +110,24 @@ fun SceneImageViewerScreen(
     Column(Modifier.fillMaxSize().background(Color.Black)) {
         DcAppBar(title = "Scene image", onBack = onBack, onOpenSettings = onOpenSettings)
 
-        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            if (file != null && file.exists()) {
-                ZoomableImage(model = file, contentDescription = "Scene image: ${meta.focus}")
-            } else {
-                Text(
-                    if (meta.status == SceneImageMeta.STATUS_DONE) "Image unavailable" else "No image yet",
-                    color = Color.White,
-                    fontSize = 15.sp,
-                )
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+        ) { page ->
+            val pageMessage = sceneMessages[page]
+            val pageMeta = pageMessage.sceneImage!!
+            val pageFile = pageMessage.attachments.firstOrNull()
+                ?.let { app.attachmentStore.fileFor(vm.convId, it) }
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                if (pageFile != null && pageFile.exists()) {
+                    ZoomableImage(model = pageFile, contentDescription = "Scene image: ${pageMeta.focus}")
+                } else {
+                    Text(
+                        if (pageMeta.status == SceneImageMeta.STATUS_DONE) "Image unavailable" else "No image yet",
+                        color = Color.White,
+                        fontSize = 15.sp,
+                    )
+                }
             }
         }
 
@@ -168,8 +197,9 @@ fun SceneImageViewerScreen(
             confirmButton = {
                 TextButton(onClick = {
                     confirmDelete = false
-                    vm.deleteSceneMessage(messageId)
-                    onBack()
+                    // Drop this image; the pager reveals a neighbour, or the empty-list
+                    // guard pops the viewer when it was the last scene image.
+                    vm.deleteSceneMessage(currentId)
                 }) { Text("Delete", color = DcColors.Error) }
             },
             dismissButton = {
@@ -196,7 +226,7 @@ fun SceneImageViewerScreen(
                         "The model writes a fresh description from the same focus.",
                     ) {
                         regenChoice = false
-                        vm.regenerateScene(messageId, reusePrompt = false)
+                        vm.regenerateScene(currentId, reusePrompt = false)
                         onBack()
                     }
                     RegenOption(
@@ -205,7 +235,7 @@ fun SceneImageViewerScreen(
                         enabled = meta.prompt.isNotBlank(),
                     ) {
                         regenChoice = false
-                        vm.regenerateScene(messageId, reusePrompt = true)
+                        vm.regenerateScene(currentId, reusePrompt = true)
                         onBack()
                     }
                     RegenOption(
@@ -267,7 +297,7 @@ fun SceneImageViewerScreen(
                     onClick = {
                         val text = current.trim()
                         editingPrompt = null
-                        vm.regenerateScene(messageId, editedPrompt = text)
+                        vm.regenerateScene(currentId, editedPrompt = text)
                         onBack()
                     },
                     enabled = current.isNotBlank(),

@@ -44,7 +44,7 @@ import net.maz.llamachat.vm.GalleryViewModel
 @Composable
 fun GalleryScreen(
     vm: GalleryViewModel,
-    onOpenItem: (Long) -> Unit,
+    onOpenItem: (Long, FlowType?) -> Unit,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
@@ -90,7 +90,7 @@ fun GalleryScreen(
                 modifier = Modifier.fillMaxSize(),
             ) {
                 items(items, key = { it.id }) { item ->
-                    Thumbnail(vm, item) { onOpenItem(item.id) }
+                    Thumbnail(vm, item) { onOpenItem(item.id, tab) }
                 }
             }
         }
