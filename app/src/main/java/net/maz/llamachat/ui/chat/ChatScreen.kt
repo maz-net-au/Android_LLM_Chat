@@ -272,6 +272,20 @@ fun ChatScreen(
         )
     }
 
+    // The scene image whose long-press "Regenerate" chooser is open (fresh description /
+    // same prompt new seed / edit). Each choice appends a new image to the chat.
+    var regenScene by remember { mutableStateOf<ChatMessage?>(null) }
+    regenScene?.let { msg ->
+        SceneRegenerateDialog(
+            prompt = msg.sceneImage?.prompt.orEmpty(),
+            onDismiss = { regenScene = null },
+            onRegenerate = { reuse, edited ->
+                regenScene = null
+                vm.regenerateScene(msg.id, reusePrompt = reuse, editedPrompt = edited)
+            },
+        )
+    }
+
     val listState = rememberLazyListState()
     // Scene images are spoilered by default; a tap reveals them. Kept in-memory for the
     // screen's lifetime so revealed images stay open while scrolling, but re-hide when the
@@ -353,6 +367,7 @@ fun ChatScreen(
                                 onReveal = { revealedScenes[message.id] = true },
                                 onOpen = { onOpenSceneImage(message.id) },
                                 onRetry = { vm.retryScene(message.id) },
+                                onRegenerateChoice = { regenScene = message },
                                 onDelete = { vm.deleteSceneMessage(message.id) },
                             )
                             return@itemsIndexed
@@ -1107,6 +1122,7 @@ private fun SceneImageItem(
     onReveal: () -> Unit,
     onOpen: () -> Unit,
     onRetry: () -> Unit,
+    onRegenerateChoice: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val meta = message.sceneImage ?: return
@@ -1126,7 +1142,7 @@ private fun SceneImageItem(
                 meta.status == SceneImageMeta.STATUS_DONE && file != null && file.exists() && !revealed -> {
                     Box {
                         SceneSpoilerCover(onReveal = onReveal, onLongPress = openMenu)
-                        SceneImageMenu(menuOpen, { menuOpen = false }, onRetry, onDelete)
+                        SceneImageMenu(menuOpen, { menuOpen = false }, onRegenerateChoice, onDelete)
                     }
                 }
                 meta.status == SceneImageMeta.STATUS_DONE && file != null && file.exists() -> {
@@ -1141,7 +1157,7 @@ private fun SceneImageItem(
                                 .clip(RoundedCornerShape(12.dp))
                                 .combinedClickable(onClick = onOpen, onLongClick = openMenu),
                         )
-                        SceneImageMenu(menuOpen, { menuOpen = false }, onRetry, onDelete)
+                        SceneImageMenu(menuOpen, { menuOpen = false }, onRegenerateChoice, onDelete)
                     }
                 }
                 meta.status == SceneImageMeta.STATUS_DONE -> SceneImageCard {
