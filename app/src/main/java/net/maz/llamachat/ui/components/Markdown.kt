@@ -66,6 +66,14 @@ fun MarkdownText(text: String, modifier: Modifier = Modifier) {
                         }
                     }
                 }
+                is MdBlock.Heading -> Text(
+                    text = inlineAnnotated(block.text, codeSpan, italicSpan),
+                    fontSize = headingSize(block.level),
+                    lineHeight = headingSize(block.level) * 1.3f,
+                    fontWeight = FontWeight.Bold,
+                    color = body,
+                    modifier = Modifier.padding(top = 10.dp, bottom = 4.dp),
+                )
                 is MdBlock.Code -> CodeBlock(block.code, body)
             }
         }
@@ -90,9 +98,21 @@ private fun CodeBlock(code: String, color: Color) {
 
 private sealed interface MdBlock {
     data class Paragraph(val text: String) : MdBlock
+    data class Heading(val level: Int, val text: String) : MdBlock
     data class Bullets(val items: List<String>) : MdBlock
     data class Code(val code: String) : MdBlock
 }
+
+/** Heading font sizes for levels 1..6, clamped so deep headings stay readable. */
+private fun headingSize(level: Int) = when (level) {
+    1 -> 24.sp
+    2 -> 20.sp
+    3 -> 18.sp
+    4 -> 16.sp
+    else -> 15.sp
+}
+
+private val headingRegex = Regex("^(#{1,6})\\s+(.*)$")
 
 private fun parseBlocks(src: String): List<MdBlock> {
     val lines = src.split("\n")
@@ -117,6 +137,12 @@ private fun parseBlocks(src: String): List<MdBlock> {
                 }
                 i++ // closing fence
                 blocks += MdBlock.Code(code.toString())
+            }
+            headingRegex.matchEntire(line.trimStart()) != null -> {
+                flushBullets()
+                val m = headingRegex.matchEntire(line.trimStart())!!
+                blocks += MdBlock.Heading(m.groupValues[1].length, m.groupValues[2].trim())
+                i++
             }
             Regex("^\\s*[-*]\\s+").containsMatchIn(line) -> {
                 val item = line.replaceFirst(Regex("^\\s*[-*]\\s+"), "")
