@@ -52,31 +52,65 @@ data class ThinkParts(
     val streaming: Boolean,
 )
 
-private const val THINK_OPEN = "<think>"
-private const val THINK_CLOSE = "</think>"
+/**
+ * Open/close delimiter pairs that wrap a model's reasoning block. Most reasoning
+ * models use `<think>…</think>`; Gemma 4 instead emits reasoning on a "thought
+ * channel" (`<|channel>thought … <channel|>`), even the empty one it inserts when
+ * thinking is disabled — which parses to an empty block and so stays hidden.
+ */
+private val THINK_TAGS = listOf(
+    "<think>" to "</think>",
+    "<|channel>thought" to "<channel|>",
+)
 
 /**
- * Split [text] into its reasoning and answer. A `<think>` with no closing tag means
- * the model is still reasoning (everything after it is reasoning-so-far, the answer
- * is empty). A closed-but-empty block is treated as no reasoning at all.
+ * Contentless markers some models leave in the visible text (e.g. Gemma's `<|think|>`
+ * thinking-enable token). Stripped before parsing so they never show, and never
+ * confused for a reasoning block.
+ */
+private val THINK_NOISE = listOf("<|think|>")
+
+private fun stripThinkNoise(text: String): String {
+    var out = text
+    for (marker in THINK_NOISE) if (out.contains(marker)) out = out.replace(marker, "")
+    return out
+}
+
+/**
+ * Split [text] into its reasoning and answer around the first reasoning block (see
+ * [THINK_TAGS]). An open tag with no closing tag means the model is still reasoning
+ * (everything after it is reasoning-so-far, the answer is empty). A closed-but-empty
+ * block is treated as no reasoning at all.
  */
 fun parseThink(text: String): ThinkParts {
-    val open = text.indexOf(THINK_OPEN)
-    if (open < 0) return ThinkParts(hasThink = false, reasoning = "", answer = text, streaming = false)
+    val cleaned = stripThinkNoise(text)
 
-    val lead = text.substring(0, open) // text before <think>; virtually always empty
-    val afterOpen = open + THINK_OPEN.length
-    val close = text.indexOf(THINK_CLOSE, afterOpen)
+    // Whichever known reasoning block opens earliest wins.
+    var open = -1
+    var tags: Pair<String, String>? = null
+    for (pair in THINK_TAGS) {
+        val i = cleaned.indexOf(pair.first)
+        if (i >= 0 && (open < 0 || i < open)) {
+            open = i
+            tags = pair
+        }
+    }
+    if (tags == null) return ThinkParts(hasThink = false, reasoning = "", answer = cleaned, streaming = false)
+
+    val (openTag, closeTag) = tags
+    val lead = cleaned.substring(0, open) // text before the tag; virtually always empty
+    val afterOpen = open + openTag.length
+    val close = cleaned.indexOf(closeTag, afterOpen)
     if (close < 0) {
         return ThinkParts(
             hasThink = true,
-            reasoning = text.substring(afterOpen).trim(),
+            reasoning = cleaned.substring(afterOpen).trim(),
             answer = lead.trim(),
             streaming = true,
         )
     }
-    val reasoning = text.substring(afterOpen, close).trim()
-    val answer = (lead + text.substring(close + THINK_CLOSE.length)).trim()
+    val reasoning = cleaned.substring(afterOpen, close).trim()
+    val answer = (lead + cleaned.substring(close + closeTag.length)).trim()
     return if (reasoning.isEmpty()) {
         ThinkParts(hasThink = false, reasoning = "", answer = answer, streaming = false)
     } else {
