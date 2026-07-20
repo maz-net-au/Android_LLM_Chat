@@ -1,8 +1,31 @@
 # LLMApp (PrivateAI)
 
 Android chat client for a self-hosted llama-server, with a ComfyUI instance on the
-same host for (future) image/audio/video generation. Kotlin + Jetpack Compose,
-manual service locator on `LlamaChatApp` (no Hilt).
+same host for image/audio/video generation. Kotlin + Jetpack Compose, MVVM
+(`ViewModel` + `StateFlow`), Room persistence, manual service locator on
+`LlamaChatApp` (no Hilt). See `README.md` for the feature tour.
+
+## Architecture & layout
+
+- **Vertical slices.** A feature = a Compose screen in `ui/<feature>/`, its
+  `ViewModel` in `vm/`, and a repository/service under `data/`. Start from
+  `ui/Navigation.kt` (the `Routes` + `NavHost`) to trace any screen to its VM.
+- **Service locator.** `LlamaChatApp` (the `Application`) lazily builds every
+  singleton — clients, repositories, stores, controllers — and hands them to
+  ViewModels through their `factory(app, …)` functions.
+- **Service + Controller pattern.** Long-running network work runs in a foreground
+  `Service` (so it survives leaving the screen); each pairs with an app-scoped
+  `Controller` that exposes live progress for screens to observe:
+  `GenerationService`/`generation` (chat reply & continue),
+  `SummarizationService`/`summarization`, `SceneImageService`/`sceneImages`,
+  `ComfyGenerationService`/`comfyJobs`.
+- **Where things live:** `data/model` domain types (`Models.kt`, `Catalog.kt`,
+  `ModelCapabilities.kt`); `data/net` HTTP (`LlamaClient`, `ComfyClient`, DTOs,
+  `ServerHealthMonitor`); `data/db` Room; `data/gen` request building
+  (`ChatRequestBuilder`) + generation services + `Think.kt` (reasoning-tag
+  parse/strip); `data/comfy` workflow packages + job running; `data/attach`
+  attachment files + WAV recorder; `data/backup` backup format; `data/gallery`
+  generated-media files.
 
 ## Build & verification
 
@@ -14,9 +37,10 @@ manual service locator on `LlamaChatApp` (no Hilt).
 
 ## Compatibility rules (data formats)
 
-- `ChatMessage`, `Attachment`, `SamplingOverrides` (data/model/Models.kt) are
-  serialized into BOTH the Room blob (`ConversationEntity.messagesJson`) and the
-  backup file format (data/backup/ConversationBackup.kt, `BACKUP_VERSION`).
+- `ChatMessage`, `Attachment`, `SceneImageMeta` (data/model/Models.kt) and
+  `SamplingOverrides` (data/model/Catalog.kt) are serialized into BOTH the Room blob
+  (`ConversationEntity.messagesJson`) and the backup file format
+  (data/backup/ConversationBackup.kt, `BACKUP_VERSION`).
   Add fields only with defaults; never rename/remove/retype. A breaking change
   needs a DB migration and/or backup version bump — stop and ask first.
 - Backups are full: attachment metadata is kept and the bytes (app-private files
