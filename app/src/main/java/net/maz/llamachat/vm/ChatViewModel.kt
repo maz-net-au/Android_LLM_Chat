@@ -35,6 +35,8 @@ import net.maz.llamachat.data.gen.SummarizationConfig
 import net.maz.llamachat.data.gen.SummarizationController
 import net.maz.llamachat.data.gen.SummarizationService
 import net.maz.llamachat.data.gen.SummaryPhase
+import net.maz.llamachat.data.gen.containsThink
+import net.maz.llamachat.data.gen.stripThink
 import net.maz.llamachat.data.model.Attachment
 import net.maz.llamachat.data.model.ChatMessage
 import net.maz.llamachat.data.model.Conversation
@@ -451,7 +453,11 @@ class ChatViewModel(
             try {
                 app.llamaClient.streamChat(s.ip, s.port, request).collect { delta ->
                     sb.append(delta)
-                    local.update { it.copy(input = sb.toString().trimStart()) }
+                    // The model may emit a reasoning block (e.g. Gemma's thought channel)
+                    // ahead of the user's line; keep it out of the input box. A block still
+                    // being streamed drops out entirely until it closes.
+                    val shown = sb.toString()
+                    local.update { it.copy(input = (if (containsThink(shown)) stripThink(shown) else shown).trimStart()) }
                 }
             } catch (_: CancellationException) {
                 // Stop pressed or screen left: keep whatever was written so far.
@@ -494,11 +500,14 @@ class ChatViewModel(
         val conv = base ?: return
         val m = conv.messages.firstOrNull { it.id == id } ?: return
         if (m.locked || m.isSceneImage) return // summarized messages are frozen; scene images aren't text
-        // Edit the text without its "Name:" prefix; remember the exact prefix to re-apply.
+        // Edit the visible answer: drop any reasoning block (e.g. Gemma's thought
+        // channel) so it isn't shown — or re-saved — then strip the "Name:" prefix,
+        // remembering the exact prefix to re-apply on save.
+        val body = if (containsThink(m.text)) stripThink(m.text) else m.text
         val name = if (m.role == Role.USER) conv.userName else conv.characterName
-        val editPrefix = namePrefix(m.text, name)
+        val editPrefix = namePrefix(body, name)
         local.update {
-            it.copy(editingMsgId = id, editText = m.text.removePrefix(editPrefix), editPrefix = editPrefix, selectedMsgId = null)
+            it.copy(editingMsgId = id, editText = body.removePrefix(editPrefix), editPrefix = editPrefix, selectedMsgId = null)
         }
     }
 

@@ -87,7 +87,8 @@ object ChatRequestBuilder {
                 // lone space token makes the model predict end-of-turn immediately
                 // (an instant EOS). Without it the next token starts a fresh word and
                 // generation proceeds; the VM trims the leading space off the stream.
-                out += apiText("assistant", m.text.trimEnd() + "\n${conv.userName}:")
+                val body = if (containsThink(m.text)) stripThink(m.text) else m.text
+                out += apiText("assistant", body.trimEnd() + "\n${conv.userName}:")
             } else {
                 out += apiMessage(m, attachmentPart)
             }
@@ -201,9 +202,12 @@ object ChatRequestBuilder {
      *  the text part when non-blank. */
     private fun apiMessage(m: ChatMessage, attachmentPart: (ChatMessage) -> List<JsonElement>): ApiMessage {
         val role = if (m.role == Role.USER) "user" else "assistant"
+        // Don't resend a prior turn's reasoning: it bloats context and Gemma in
+        // particular expects earlier thoughts stripped from the history.
+        val text = if (containsThink(m.text)) stripThink(m.text) else m.text
         val media = if (m.attachments.isEmpty()) emptyList() else attachmentPart(m)
-        if (media.isEmpty()) return apiText(role, m.text)
-        val textPart = m.text.takeIf { it.isNotBlank() }
+        if (media.isEmpty()) return apiText(role, text)
+        val textPart = text.takeIf { it.isNotBlank() }
             ?.let { Json.encodeToJsonElement(TextPart(text = it)) }
         return apiParts(role, media + listOfNotNull(textPart))
     }

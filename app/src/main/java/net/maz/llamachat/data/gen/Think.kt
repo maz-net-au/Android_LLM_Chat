@@ -14,6 +14,13 @@ private val THINK_BLOCKS = listOf(
 private val THINK_NOISE = listOf("<|think|>")
 
 /**
+ * Whether [text] carries any reasoning tag at all — a cheap guard so callers can skip
+ * [stripThink] (and its whitespace collapsing) for the common case of plain text.
+ */
+fun containsThink(text: String): Boolean =
+    THINK_BLOCKS.any { text.contains(it.first) } || THINK_NOISE.any { text.contains(it) }
+
+/**
  * Remove reasoning blocks (see [THINK_BLOCKS]) from a stored message so only the
  * visible answer remains. Mirrors the answer-extraction in the UI's `parseThink`
  * (ui/chat/ThinkingSection.kt), but as a plain string→string helper usable from the

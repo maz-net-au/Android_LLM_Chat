@@ -77,45 +77,64 @@ private fun stripThinkNoise(text: String): String {
 }
 
 /**
- * Split [text] into its reasoning and answer around the first reasoning block (see
- * [THINK_TAGS]). An open tag with no closing tag means the model is still reasoning
- * (everything after it is reasoning-so-far, the answer is empty). A closed-but-empty
- * block is treated as no reasoning at all.
+ * Split [text] into reasoning and answer, removing *every* reasoning block (see
+ * [THINK_TAGS]) from the answer — not just the first, since a continued reply can
+ * accumulate several (e.g. Gemma re-emits its empty thought channel on each turn).
+ * The non-empty blocks' contents are joined as the reasoning. A trailing open tag
+ * with no close means the model is still reasoning: the text after it is
+ * reasoning-so-far and [streaming] is set. When only empty blocks are found there's
+ * nothing to show, so [hasThink] stays false and the blocks simply vanish.
  */
 fun parseThink(text: String): ThinkParts {
     val cleaned = stripThinkNoise(text)
+    val reasoning = StringBuilder()
+    val answer = StringBuilder()
+    var streaming = false
 
-    // Whichever known reasoning block opens earliest wins.
-    var open = -1
-    var tags: Pair<String, String>? = null
-    for (pair in THINK_TAGS) {
-        val i = cleaned.indexOf(pair.first)
-        if (i >= 0 && (open < 0 || i < open)) {
-            open = i
-            tags = pair
+    var i = 0
+    while (true) {
+        // Find the earliest-opening known block at or after i.
+        var open = -1
+        var tags: Pair<String, String>? = null
+        for (pair in THINK_TAGS) {
+            val at = cleaned.indexOf(pair.first, i)
+            if (at >= 0 && (open < 0 || at < open)) {
+                open = at
+                tags = pair
+            }
         }
+        if (tags == null) {
+            answer.append(cleaned, i, cleaned.length)
+            break
+        }
+        answer.append(cleaned, i, open) // text before the block belongs to the answer
+        val afterOpen = open + tags.first.length
+        val close = cleaned.indexOf(tags.second, afterOpen)
+        if (close < 0) {
+            // Open block with no close yet: the model is still streaming its reasoning.
+            reasoning.appendReasoning(cleaned.substring(afterOpen))
+            streaming = true
+            break
+        }
+        reasoning.appendReasoning(cleaned.substring(afterOpen, close))
+        i = close + tags.second.length
     }
-    if (tags == null) return ThinkParts(hasThink = false, reasoning = "", answer = cleaned, streaming = false)
 
-    val (openTag, closeTag) = tags
-    val lead = cleaned.substring(0, open) // text before the tag; virtually always empty
-    val afterOpen = open + openTag.length
-    val close = cleaned.indexOf(closeTag, afterOpen)
-    if (close < 0) {
-        return ThinkParts(
-            hasThink = true,
-            reasoning = cleaned.substring(afterOpen).trim(),
-            answer = lead.trim(),
-            streaming = true,
-        )
-    }
-    val reasoning = cleaned.substring(afterOpen, close).trim()
-    val answer = (lead + cleaned.substring(close + closeTag.length)).trim()
-    return if (reasoning.isEmpty()) {
-        ThinkParts(hasThink = false, reasoning = "", answer = answer, streaming = false)
-    } else {
-        ThinkParts(hasThink = true, reasoning = reasoning, answer = answer, streaming = false)
-    }
+    val reasoningText = reasoning.toString()
+    return ThinkParts(
+        hasThink = reasoningText.isNotEmpty() || streaming,
+        reasoning = reasoningText,
+        answer = answer.toString().trim(),
+        streaming = streaming,
+    )
+}
+
+/** Append a block's inner text as a reasoning paragraph, skipping empty blocks. */
+private fun StringBuilder.appendReasoning(raw: String) {
+    val t = raw.trim()
+    if (t.isEmpty()) return
+    if (isNotEmpty()) append("\n\n")
+    append(t)
 }
 
 /**
