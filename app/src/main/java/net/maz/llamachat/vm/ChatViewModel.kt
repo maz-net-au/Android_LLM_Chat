@@ -449,6 +449,12 @@ class ChatViewModel(
             val request = ChatRequestBuilder.impersonate(conv, s) { m ->
                 m.attachments.mapNotNull { app.attachmentStore.toContentPart(convId, it) }
             }
+            // ChatRequestBuilder folds the impersonation onto the prior assistant turn,
+            // ending the prefill with this marker; the model's continuation is the user's
+            // line. Newer llama-server echoes the whole prefill back at the start of the
+            // stream (older builds returned only the continuation), so keep just the text
+            // after the last marker — otherwise the prior assistant turn lands in the box.
+            val marker = "\n${conv.userName}:"
             val sb = StringBuilder()
             try {
                 app.llamaClient.streamChat(s.ip, s.port, request).collect { delta ->
@@ -456,7 +462,7 @@ class ChatViewModel(
                     // The model may emit a reasoning block (e.g. Gemma's thought channel)
                     // ahead of the user's line; keep it out of the input box. A block still
                     // being streamed drops out entirely until it closes.
-                    val shown = sb.toString()
+                    val shown = sb.toString().substringAfterLast(marker)
                     local.update { it.copy(input = (if (containsThink(shown)) stripThink(shown) else shown).trimStart()) }
                 }
             } catch (_: CancellationException) {
