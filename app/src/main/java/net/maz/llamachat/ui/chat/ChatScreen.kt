@@ -558,8 +558,10 @@ private fun SummarizingBanner(progress: String, onCancel: () -> Unit) {
  * still carry it.
  */
 private fun ChatMessage.displayText(userName: String, characterName: String): String {
-    val prefix = if (role == Role.USER) "$userName: " else "$characterName: "
-    return text.removePrefix(prefix)
+    // Strip "Name:" with or without its trailing space — a model (or server) may emit
+    // an emote straight after the colon ("Name:*waves*"), matching namePrefix in the VM.
+    val name = if (role == Role.USER) userName else characterName
+    return text.removePrefix("$name: ").removePrefix("$name:")
 }
 
 @Composable

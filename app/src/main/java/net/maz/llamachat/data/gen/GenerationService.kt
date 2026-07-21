@@ -132,38 +132,43 @@ class GenerationService : Service() {
             // discarding would drop the user's existing message.
             var attempt = 0
             while (true) {
-                val sb = StringBuilder(base)
+                // Accumulate only the server's output; [stitch] folds it onto [base] so
+                // the prefill/continued text is kept exactly once whether or not the
+                // server echoes it back at the start of the stream.
+                val streamed = StringBuilder()
                 controller.update(token, base) // reset the live overlay for this attempt
                 var lastWrite = SystemClock.elapsedRealtime()
                 try {
                     client.streamChat(s.ip, s.port, request).collect { delta ->
-                        sb.append(delta)
-                        controller.update(token, sb.toString())
+                        streamed.append(delta)
+                        val full = stitch(base, streamed.toString())
+                        controller.update(token, full)
                         val now = SystemClock.elapsedRealtime()
                         if (now - lastWrite >= WRITE_INTERVAL_MS) {
-                            persist(repo, convId, targetId, sb.toString())
+                            persist(repo, convId, targetId, full)
                             lastWrite = now
                         }
                     }
                 } catch (c: CancellationException) {
                     // Stop / Cancel: keep whatever was generated so far. The coroutine
                     // is already cancelled, so the save must run uninterruptibly.
-                    withContext(NonCancellable) { persist(repo, convId, targetId, sb.toString()) }
+                    withContext(NonCancellable) { persist(repo, convId, targetId, stitch(base, streamed.toString())) }
                     throw c
                 } catch (e: Exception) {
-                    val text = if (sb.length <= base.length) {
+                    val text = if (streamed.isEmpty()) {
                         "⚠️ Couldn't generate a reply: ${e.message ?: "unknown error"}"
                     } else {
-                        sb.toString() // a dropped connection still keeps the partial
+                        stitch(base, streamed.toString()) // a dropped connection still keeps the partial
                     }
                     persist(repo, convId, targetId, text)
                     return
                 }
 
-                val emptyReply = !forceContinue && sb.toString().removePrefix(prefix).isBlank()
+                val full = stitch(base, streamed.toString())
+                val emptyReply = !forceContinue && full.removePrefix(prefix).isBlank()
                 when {
                     !emptyReply -> {
-                        persist(repo, convId, targetId, sb.toString())
+                        persist(repo, convId, targetId, full)
                         return
                     }
                     attempt < MAX_EMPTY_RETRIES -> attempt++ // re-request and try again
@@ -177,6 +182,19 @@ class GenerationService : Service() {
             controller.end(token)
         }
     }
+
+    /**
+     * Fold the server's [streamed] output onto the prefilled [base] (the transcript
+     * "Name:" prefix, or the existing text a Continue extends), keeping [base] exactly
+     * once. Newer llama-server echoes an assistant prefill back at the start of its
+     * stream; older builds return only the continuation. Without this reconciliation
+     * the echo left a doubled prefix — a stray "Name:" in the bubble after the display
+     * strip removed only the first copy. Compare against [base] with trailing space
+     * trimmed so a server that re-emits the prefix without its trailing space still
+     * counts as an echo.
+     */
+    private fun stitch(base: String, streamed: String): String =
+        if (base.isNotEmpty() && streamed.startsWith(base.trimEnd())) streamed else base + streamed
 
     /** An empty reply survived every retry: don't store a blank turn.
      *  A regenerated variant falls back to the previously shown one. A fresh reply
