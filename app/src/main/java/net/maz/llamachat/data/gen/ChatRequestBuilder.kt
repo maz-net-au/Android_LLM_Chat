@@ -78,7 +78,11 @@ object ChatRequestBuilder {
     ): ChatRequest {
         val out = ArrayList<ApiMessage>()
         systemMessage(conv)?.let { out += it }
-        val last = conv.messages.lastIndex
+        // Target the last *real* message, skipping trailing scene images (local-only,
+        // never sent). Using the raw lastIndex would let a trailing scene image steal
+        // the "fold the name prefix on" slot, so the real assistant turn gets sent as a
+        // completed message and the model instantly predicts EOS — an empty impersonation.
+        val last = conv.messages.indexOfLast { !it.isSceneImage }
         conv.messages.forEachIndexed { i, m ->
             if (m.locked) return@forEachIndexed // folded into the summary; not resent
             if (m.isSceneImage) return@forEachIndexed // local-only; never sent to the model
