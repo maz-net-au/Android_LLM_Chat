@@ -439,14 +439,18 @@ class ChatViewModel(
      * committing it as a message), so the user can review and edit before sending.
      * Runs in the screen's scope — cancelled if the user leaves the chat or hits
      * the shared Stop button.
+     *
+     * @param continueInput keep what's already typed and generate the rest of that
+     *   line; otherwise the box is cleared and the model writes the turn from scratch.
      */
-    fun impersonate() {
+    fun impersonate(continueInput: Boolean = false) {
         if (isBusy() || local.value.impersonating) return
         val conv = base ?: return
-        local.update { it.copy(impersonating = true, input = "", selectedMsgId = null) }
+        val head = if (continueInput) local.value.input.trimEnd() else ""
+        local.update { it.copy(impersonating = true, input = head, selectedMsgId = null) }
         impersonateJob = viewModelScope.launch {
             val s = app.settingsRepository.current()
-            val request = ChatRequestBuilder.impersonate(conv, s) { m ->
+            val request = ChatRequestBuilder.impersonate(conv, s, prefill = head) { m ->
                 m.attachments.mapNotNull { app.attachmentStore.toContentPart(convId, it) }
             }
             // ChatRequestBuilder folds the impersonation onto the prior assistant turn,
@@ -463,7 +467,8 @@ class ChatViewModel(
                     // ahead of the user's line; keep it out of the input box. A block still
                     // being streamed drops out entirely until it closes.
                     val shown = sb.toString().substringAfterLast(marker)
-                    local.update { it.copy(input = (if (containsThink(shown)) stripThink(shown) else shown).trimStart()) }
+                    val body = if (containsThink(shown)) stripThink(shown) else shown
+                    local.update { it.copy(input = foldOntoPrefill(head, body)) }
                 }
             } catch (_: CancellationException) {
                 // Stop pressed or screen left: keep whatever was written so far.
@@ -472,6 +477,23 @@ class ChatViewModel(
             } finally {
                 local.update { it.copy(input = it.input.trim(), impersonating = false) }
             }
+        }
+    }
+
+    /**
+     * Combine the text we prefilled with ([head], already in the input box) and the
+     * model's [body] for the input box. Servers differ: newer llama-server echoes the
+     * prefill back at the start of the stream (so [body] already contains [head]),
+     * older ones return only the continuation and we join the two ourselves — keeping
+     * the model's own leading whitespace, since it may be continuing mid-word.
+     */
+    private fun foldOntoPrefill(head: String, body: String): String {
+        val shown = body.trimStart()
+        return when {
+            head.isEmpty() -> shown
+            shown.startsWith(head) -> shown // the echo landed
+            head.startsWith(shown) -> head // still echoing our own text back
+            else -> head + body
         }
     }
 

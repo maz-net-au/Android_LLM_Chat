@@ -70,10 +70,15 @@ object ChatRequestBuilder {
      * transcript continuation, stopping at the character's "Name:". Only
      * meaningful in transcript mode (a character with name prefixes); the streamed
      * text goes into the input box for the user to send as their own turn.
+     *
+     * @param prefill text already typed in the input box; when non-blank it is folded
+     *   in after the "Name:" prefix so the model continues *that* line instead of
+     *   writing the turn from scratch.
      */
     fun impersonate(
         conv: Conversation,
         s: SettingsRepository.Settings,
+        prefill: String = "",
         attachmentPart: (ChatMessage) -> List<JsonElement> = NO_ATTACHMENTS,
     ): ChatRequest {
         val out = ArrayList<ApiMessage>()
@@ -87,12 +92,14 @@ object ChatRequestBuilder {
             if (m.locked) return@forEachIndexed // folded into the summary; not resent
             if (m.isSceneImage) return@forEachIndexed // local-only; never sent to the model
             if (i == last && m.role == Role.ASSISTANT && conv.character.usesNamePrefixes) {
-                // No trailing space after the "Name:" prefix: ending the prompt on a
-                // lone space token makes the model predict end-of-turn immediately
-                // (an instant EOS). Without it the next token starts a fresh word and
-                // generation proceeds; the VM trims the leading space off the stream.
+                // No trailing space after the "Name:" prefix (nor after a prefill):
+                // ending the prompt on a lone space token makes the model predict
+                // end-of-turn immediately (an instant EOS). Without it the next token
+                // starts a fresh word and generation proceeds; the VM trims the leading
+                // space off the stream.
                 val body = if (containsThink(m.text)) stripThink(m.text) else m.text
-                out += apiText("assistant", body.trimEnd() + "\n${conv.userName}:")
+                val typed = if (prefill.isBlank()) "" else " " + prefill.trimEnd()
+                out += apiText("assistant", body.trimEnd() + "\n${conv.userName}:$typed")
             } else {
                 out += apiMessage(m, attachmentPart)
             }

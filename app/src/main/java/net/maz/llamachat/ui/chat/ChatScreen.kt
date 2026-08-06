@@ -421,9 +421,13 @@ fun ChatScreen(
                 // writes the user's *next* turn — so it needs a preceding assistant reply.
                 showImpersonate = character?.usesNamePrefixes == true,
                 impersonateEnabled = !state.streaming && !state.impersonating && lastIsAssistant,
+                // Continuing needs something to continue from.
+                continueImpersonateEnabled = !state.streaming && !state.impersonating &&
+                    lastIsAssistant && state.input.isNotBlank(),
                 onStop = vm::stop,
                 onRegenerate = vm::regenerate,
-                onImpersonate = vm::impersonate,
+                onImpersonate = { vm.impersonate() },
+                onContinueImpersonate = { vm.impersonate(continueInput = true) },
             )
         }
 
@@ -834,9 +838,11 @@ private fun ActionRow(
     regenerateEnabled: Boolean,
     showImpersonate: Boolean,
     impersonateEnabled: Boolean,
+    continueImpersonateEnabled: Boolean,
     onStop: () -> Unit,
     onRegenerate: () -> Unit,
     onImpersonate: () -> Unit,
+    onContinueImpersonate: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 8.dp),
@@ -845,17 +851,64 @@ private fun ActionRow(
         PillButton("Stop", Icons.Filled.Stop, enabled = streaming || impersonating, borderColor = DcColors.OnSurface.copy(alpha = 0.2f), contentColor = DcColors.OnSurface.copy(alpha = 0.75f), onClick = onStop)
         if (showImpersonate) {
             Spacer(Modifier.width(8.dp))
-            PillButton(
-                label = "Impersonate",
-                icon = Icons.Filled.Person,
+            ImpersonatePill(
                 enabled = impersonateEnabled,
-                borderColor = DcColors.OnSurface.copy(alpha = 0.2f),
-                contentColor = DcColors.OnSurface.copy(alpha = 0.75f),
-                onClick = onImpersonate,
+                continueEnabled = continueImpersonateEnabled,
+                onFresh = onImpersonate,
+                onContinue = onContinueImpersonate,
             )
         }
         Spacer(Modifier.width(8.dp))
         PillButton("Regenerate", Icons.Filled.Refresh, enabled = regenerateEnabled, borderColor = DcColors.Primary, contentColor = DcColors.Primary, onClick = onRegenerate)
+    }
+}
+
+/**
+ * Impersonate as a pill split in two: the labelled half throws away whatever is in the
+ * input box and writes the user's turn from scratch, the ▶ half keeps the typed text
+ * and generates the rest of that line (so it's dead until something is typed).
+ */
+@Composable
+private fun ImpersonatePill(
+    enabled: Boolean,
+    continueEnabled: Boolean,
+    onFresh: () -> Unit,
+    onContinue: () -> Unit,
+) {
+    val shape = RoundedCornerShape(18.dp)
+    val border = DcColors.OnSurface.copy(alpha = 0.2f)
+    val content = DcColors.OnSurface.copy(alpha = 0.75f)
+    // The pill's own outline dims with the (labelled) main action; each half's
+    // content dims with that half.
+    val outline = border.copy(alpha = border.alpha * if (enabled) 1f else 0.4f)
+    Row(
+        modifier = Modifier.background(DcColors.Surface, shape).border(1.dp, outline, shape),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            modifier = Modifier
+                .clickable(enabled = enabled, onClick = onFresh)
+                .padding(start = 16.dp, end = 12.dp, top = 7.dp, bottom = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            val alpha = if (enabled) 1f else 0.4f
+            Icon(Icons.Filled.Person, contentDescription = null, tint = content.copy(alpha = alpha), modifier = Modifier.size(17.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Impersonate", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = content.copy(alpha = alpha))
+        }
+        Box(Modifier.width(1.dp).height(22.dp).background(outline))
+        Box(
+            modifier = Modifier
+                .clickable(enabled = continueEnabled, onClick = onContinue)
+                .padding(horizontal = 13.dp, vertical = 7.dp),
+        ) {
+            Icon(
+                Icons.Filled.PlayArrow,
+                contentDescription = "Continue what I've typed",
+                tint = content.copy(alpha = if (continueEnabled) 1f else 0.4f),
+                modifier = Modifier.size(17.dp),
+            )
+        }
     }
 }
 
