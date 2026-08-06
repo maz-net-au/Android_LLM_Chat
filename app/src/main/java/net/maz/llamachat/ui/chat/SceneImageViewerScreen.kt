@@ -8,23 +8,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -49,10 +45,10 @@ import net.maz.llamachat.ui.theme.DcColors
 import net.maz.llamachat.vm.ChatViewModel
 
 /**
- * Full-screen zoomable view of one scene image with Delete and Regenerate.
- * Regenerate asks whether to write a fresh description or re-run the saved prompt
- * with a new seed; either appends a NEW image to the chat (the original is kept)
- * and returns here. Delete removes this image and pops back.
+ * Full-screen zoomable view of one scene image. A bottom-right menu holds the same
+ * actions as the in-chat long-press: regenerate from the same prompt, a fresh
+ * description, or an edited one — each appends a NEW image to the chat (the original
+ * is kept) and pops back — plus Delete, which removes this image and pops back.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -99,7 +95,14 @@ fun SceneImageViewerScreen(
     val currentId = message.id
 
     var confirmDelete by remember { mutableStateOf(false) }
-    var regenChoice by remember { mutableStateOf(false) }
+    var menuOpen by remember { mutableStateOf(false) }
+    var editPrompt by remember { mutableStateOf(false) }
+
+    // Any regenerate appends a NEW image to the chat, so leave the viewer for it.
+    fun regenerate(reuse: Boolean, edited: String?) {
+        vm.regenerateScene(currentId, reusePrompt = reuse, editedPrompt = edited)
+        onBack()
+    }
 
     Column(Modifier.fillMaxSize().background(Color.Black)) {
         DcAppBar(title = "Scene image", onBack = onBack, onOpenSettings = onOpenSettings)
@@ -153,31 +156,35 @@ fun SceneImageViewerScreen(
             )
         }
 
-        Row(Modifier.fillMaxWidth().padding(16.dp)) {
-            Button(
-                onClick = { regenChoice = true },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = DcColors.SurfaceTint,
-                    contentColor = DcColors.Primary,
-                ),
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.weight(1f).height(46.dp),
-            ) {
-                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Regenerate", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-            }
-            Spacer(Modifier.width(12.dp))
-            Button(
-                onClick = { confirmDelete = true },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = DcColors.SurfaceTint,
-                    contentColor = DcColors.Error,
-                ),
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.weight(1f).height(46.dp),
-            ) {
-                Text("Delete", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        // Everything this screen can do hangs off one small menu in the bottom-right
+        // corner, so the image itself keeps the space.
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            Box {
+                IconButton(
+                    onClick = { menuOpen = true },
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(DcColors.SurfaceTint, RoundedCornerShape(10.dp)),
+                ) {
+                    Icon(
+                        Icons.Filled.MoreVert,
+                        contentDescription = "Image actions",
+                        tint = DcColors.OnSurface,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+                SceneImageMenu(
+                    expanded = menuOpen,
+                    onDismiss = { menuOpen = false },
+                    hasPrompt = meta.prompt.isNotBlank(),
+                    onSamePrompt = { regenerate(reuse = true, edited = null) },
+                    onNewDescription = { regenerate(reuse = false, edited = null) },
+                    onEditDescription = { editPrompt = true },
+                    onDelete = { confirmDelete = true },
+                )
             }
         }
     }
@@ -202,14 +209,13 @@ fun SceneImageViewerScreen(
         )
     }
 
-    if (regenChoice) {
-        SceneRegenerateDialog(
+    if (editPrompt) {
+        SceneEditPromptDialog(
             prompt = meta.prompt,
-            onDismiss = { regenChoice = false },
-            onRegenerate = { reuse, edited ->
-                regenChoice = false
-                vm.regenerateScene(currentId, reusePrompt = reuse, editedPrompt = edited)
-                onBack()
+            onDismiss = { editPrompt = false },
+            onGenerate = { edited ->
+                editPrompt = false
+                regenerate(false, edited)
             },
         )
     }

@@ -272,16 +272,16 @@ fun ChatScreen(
         )
     }
 
-    // The scene image whose long-press "Regenerate" chooser is open (fresh description /
-    // same prompt new seed / edit). Each choice appends a new image to the chat.
-    var regenScene by remember { mutableStateOf<ChatMessage?>(null) }
-    regenScene?.let { msg ->
-        SceneRegenerateDialog(
+    // The scene image whose "Edit description" was picked from its long-press menu;
+    // generating appends a new image to the chat (the original is kept).
+    var editScene by remember { mutableStateOf<ChatMessage?>(null) }
+    editScene?.let { msg ->
+        SceneEditPromptDialog(
             prompt = msg.sceneImage?.prompt.orEmpty(),
-            onDismiss = { regenScene = null },
-            onRegenerate = { reuse, edited ->
-                regenScene = null
-                vm.regenerateScene(msg.id, reusePrompt = reuse, editedPrompt = edited)
+            onDismiss = { editScene = null },
+            onGenerate = { edited ->
+                editScene = null
+                vm.regenerateScene(msg.id, reusePrompt = false, editedPrompt = edited)
             },
         )
     }
@@ -367,7 +367,9 @@ fun ChatScreen(
                                 onReveal = { revealedScenes[message.id] = true },
                                 onOpen = { onOpenSceneImage(message.id) },
                                 onRetry = { vm.retryScene(message.id) },
-                                onRegenerateChoice = { regenScene = message },
+                                onSamePrompt = { vm.regenerateScene(message.id, reusePrompt = true, editedPrompt = null) },
+                                onNewDescription = { vm.regenerateScene(message.id, reusePrompt = false, editedPrompt = null) },
+                                onEditDescription = { editScene = message },
                                 onDelete = { vm.deleteSceneMessage(message.id) },
                             )
                             return@itemsIndexed
@@ -1124,16 +1126,29 @@ private fun SceneImageItem(
     onReveal: () -> Unit,
     onOpen: () -> Unit,
     onRetry: () -> Unit,
-    onRegenerateChoice: () -> Unit,
+    onSamePrompt: () -> Unit,
+    onNewDescription: () -> Unit,
+    onEditDescription: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val meta = message.sceneImage ?: return
     val haptics = LocalHapticFeedback.current
-    // Long-press opens Regenerate/Delete without opening (or revealing) the image.
+    // Long-press opens the regenerate/delete menu without opening (or revealing) the image.
     var menuOpen by remember { mutableStateOf(false) }
     val openMenu = {
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
         menuOpen = true
+    }
+    val menu = @Composable {
+        SceneImageMenu(
+            expanded = menuOpen,
+            onDismiss = { menuOpen = false },
+            hasPrompt = meta.prompt.isNotBlank(),
+            onSamePrompt = onSamePrompt,
+            onNewDescription = onNewDescription,
+            onEditDescription = onEditDescription,
+            onDelete = onDelete,
+        )
     }
     Row(
         modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
@@ -1144,7 +1159,7 @@ private fun SceneImageItem(
                 meta.status == SceneImageMeta.STATUS_DONE && file != null && file.exists() && !revealed -> {
                     Box {
                         SceneSpoilerCover(onReveal = onReveal, onLongPress = openMenu)
-                        SceneImageMenu(menuOpen, { menuOpen = false }, onRegenerateChoice, onDelete)
+                        menu()
                     }
                 }
                 meta.status == SceneImageMeta.STATUS_DONE && file != null && file.exists() -> {
@@ -1159,7 +1174,7 @@ private fun SceneImageItem(
                                 .clip(RoundedCornerShape(12.dp))
                                 .combinedClickable(onClick = onOpen, onLongClick = openMenu),
                         )
-                        SceneImageMenu(menuOpen, { menuOpen = false }, onRegenerateChoice, onDelete)
+                        menu()
                     }
                 }
                 meta.status == SceneImageMeta.STATUS_DONE -> SceneImageCard {
@@ -1223,29 +1238,6 @@ private fun SceneSpoilerCover(onReveal: () -> Unit, onLongPress: () -> Unit) {
         Spacer(Modifier.height(8.dp))
         Text("Tap to reveal", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = DcColors.OnSurface)
         Text("Scene image", fontSize = 11.sp, color = DcColors.OnSurfaceFaint)
-    }
-}
-
-/** Long-press menu for a finished scene image: the same Regenerate/Delete the
- *  viewer offers, reachable without opening (or revealing) the image. */
-@Composable
-private fun SceneImageMenu(
-    expanded: Boolean,
-    onDismiss: () -> Unit,
-    onRegenerate: () -> Unit,
-    onDelete: () -> Unit,
-) {
-    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
-        DropdownMenuItem(
-            text = { Text("Regenerate", fontSize = 14.sp, color = DcColors.OnSurface) },
-            leadingIcon = { Icon(Icons.Filled.Refresh, contentDescription = null, tint = DcColors.OnSurfaceVariant, modifier = Modifier.size(19.dp)) },
-            onClick = { onDismiss(); onRegenerate() },
-        )
-        DropdownMenuItem(
-            text = { Text("Delete", fontSize = 14.sp, color = DcColors.Error) },
-            leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = DcColors.Error, modifier = Modifier.size(19.dp)) },
-            onClick = { onDismiss(); onDelete() },
-        )
     }
 }
 
