@@ -707,6 +707,31 @@ class ChatViewModel(
     }
 
     /**
+     * Send a scene image to the model as a user turn — scene images are local-only, so
+     * this is the one way the model ever sees one. The image rides on a narrated line
+     * ("[User has shared an image of <focus>]") because a bare image with no context
+     * reads as a non-sequitur mid-roleplay. Only meaningful on a vision model; the
+     * caller gates the action on that.
+     *
+     * The bytes are copied to a fresh attachment so the new message owns its own file
+     * and deleting the scene image later can't strip the image from the transcript.
+     */
+    fun shareSceneImage(messageId: Long) {
+        if (isBusy()) return
+        val msg = base?.messages?.firstOrNull { it.id == messageId } ?: return
+        val meta = msg.sceneImage ?: return
+        val att = msg.attachments.firstOrNull() ?: return
+        viewModelScope.launch {
+            val copy = app.attachmentStore.copy(convId, att) ?: return@launch
+            val focus = meta.focus.trim()
+            val text =
+                if (focus.isBlank()) "[User has shared an image]"
+                else "[User has shared an image of $focus]"
+            sendInternal(text, listOf(copy))
+        }
+    }
+
+    /**
      * Copy a scene image out of app-private storage into the device's
      * Pictures/PrivateAI, where other apps (and the system gallery) can see it.
      * [onResult] gets the message to show; on API 26–28 the caller must already hold

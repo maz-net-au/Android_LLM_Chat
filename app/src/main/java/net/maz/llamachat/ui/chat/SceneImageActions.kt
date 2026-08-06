@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -46,7 +47,9 @@ import net.maz.llamachat.ui.theme.DcColors
  *
  * @param hasPrompt false when no description was saved — the options that need one
  *   (same prompt / edit) are disabled.
- * @param hasImage false when the image's bytes aren't on disk — nothing to save.
+ * @param hasImage false when the image's bytes aren't on disk — nothing to save or share.
+ * @param canShare false unless the chat's model takes images and nothing else is
+ *   generating — sharing appends a user turn and runs a reply.
  */
 @Composable
 fun SceneImageMenu(
@@ -54,9 +57,11 @@ fun SceneImageMenu(
     onDismiss: () -> Unit,
     hasPrompt: Boolean,
     hasImage: Boolean,
+    canShare: Boolean,
     onSamePrompt: () -> Unit,
     onNewDescription: () -> Unit,
     onEditDescription: () -> Unit,
+    onShare: () -> Unit,
     onSave: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -69,6 +74,9 @@ fun SceneImageMenu(
         }
         SceneMenuItem("Edit description", Icons.Filled.Edit, enabled = hasPrompt) {
             onDismiss(); onEditDescription()
+        }
+        SceneMenuItem("Show to model", Icons.AutoMirrored.Filled.Send, enabled = hasImage && canShare) {
+            onDismiss(); onShare()
         }
         SceneMenuItem("Save image", Icons.Filled.SaveAlt, enabled = hasImage) {
             onDismiss(); onSave()

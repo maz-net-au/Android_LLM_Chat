@@ -391,6 +391,10 @@ fun ChatScreen(
                                 onSamePrompt = { vm.regenerateScene(message.id, reusePrompt = true, editedPrompt = null) },
                                 onNewDescription = { vm.regenerateScene(message.id, reusePrompt = false, editedPrompt = null) },
                                 onEditDescription = { editScene = message },
+                                // Only a vision model can look at what it's handed.
+                                canShare = state.canAttachImage && !state.streaming &&
+                                    !state.impersonating && !state.summarizing,
+                                onShare = { vm.shareSceneImage(message.id) },
                                 onSave = { saveScene(message.id) },
                                 onDelete = { vm.deleteSceneMessage(message.id) },
                             )
@@ -1204,6 +1208,8 @@ private fun SceneImageItem(
     onSamePrompt: () -> Unit,
     onNewDescription: () -> Unit,
     onEditDescription: () -> Unit,
+    canShare: Boolean,
+    onShare: () -> Unit,
     onSave: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -1221,9 +1227,11 @@ private fun SceneImageItem(
             onDismiss = { menuOpen = false },
             hasPrompt = meta.prompt.isNotBlank(),
             hasImage = file != null && file.exists(),
+            canShare = canShare,
             onSamePrompt = onSamePrompt,
             onNewDescription = onNewDescription,
             onEditDescription = onEditDescription,
+            onShare = onShare,
             onSave = onSave,
             onDelete = onDelete,
         )

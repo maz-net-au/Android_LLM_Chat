@@ -209,9 +209,14 @@ fun SceneImageViewerScreen(
                     onDismiss = { menuOpen = false },
                     hasPrompt = meta.prompt.isNotBlank(),
                     hasImage = currentFile?.exists() == true,
+                    // Only a vision model can look at what it's handed.
+                    canShare = state.canAttachImage && !state.streaming &&
+                        !state.impersonating && !state.summarizing,
                     onSamePrompt = { regenerate(reuse = true, edited = null) },
                     onNewDescription = { regenerate(reuse = false, edited = null) },
                     onEditDescription = { editPrompt = true },
+                    // The reply lands in the chat, so go watch it.
+                    onShare = { vm.shareSceneImage(currentId); onBack() },
                     onSave = { save() },
                     onDelete = { confirmDelete = true },
                 )

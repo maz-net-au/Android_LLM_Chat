@@ -105,6 +105,23 @@ class AttachmentStore(private val context: Context) {
         }.getOrNull()
     }
 
+    /**
+     * Duplicate [att]'s file under a fresh id in the same conversation, returning the
+     * new [Attachment] (null if the source bytes are gone). Used when an image has to
+     * live on two messages — each message owns its own file, so deleting one doesn't
+     * pull the bytes out from under the other.
+     */
+    suspend fun copy(convId: Long, att: Attachment): Attachment? = withContext(Dispatchers.IO) {
+        runCatching {
+            val src = fileFor(convId, att)
+            if (!src.exists()) return@runCatching null
+            val id = IdGen.next()
+            val dest = newImageFile(convId, id, att.fileName.substringAfterLast('.', ""))
+            src.inputStream().use { input -> dest.outputStream().use { input.copyTo(it) } }
+            Attachment(id, att.kind, dest.name, att.mimeType, att.durationMs)
+        }.getOrNull()
+    }
+
     /** Delete the files behind [atts] (metadata stays with the message's owner). */
     fun delete(convId: Long, atts: List<Attachment>) {
         atts.forEach { fileFor(convId, it).delete() }
