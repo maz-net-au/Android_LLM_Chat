@@ -706,6 +706,27 @@ class ChatViewModel(
         saveThen(updated) { SceneImageService.start(app, convId, messageId, reuse) }
     }
 
+    /**
+     * Copy a scene image out of app-private storage into the device's
+     * Pictures/PrivateAI, where other apps (and the system gallery) can see it.
+     * [onResult] gets the message to show; on API 26–28 the caller must already hold
+     * WRITE_EXTERNAL_STORAGE.
+     */
+    fun saveSceneImage(messageId: Long, onResult: (String) -> Unit) {
+        val msg = base?.messages?.firstOrNull { it.id == messageId }
+        val att = msg?.attachments?.firstOrNull()
+        if (att == null) {
+            onResult("No image to save")
+            return
+        }
+        viewModelScope.launch {
+            val file = app.attachmentStore.fileFor(convId, att)
+            app.galleryRepository.store.exportToMediaStore(file, att.fileName, att.mimeType)
+                .onSuccess { onResult("Saved to Pictures/PrivateAI") }
+                .onFailure { onResult("Save failed: ${it.message}") }
+        }
+    }
+
     /** Remove a scene-image message: cancel any work still in flight for it and delete
      *  its image files. */
     fun deleteSceneMessage(messageId: Long) {

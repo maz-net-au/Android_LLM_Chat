@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -45,15 +46,18 @@ import net.maz.llamachat.ui.theme.DcColors
  *
  * @param hasPrompt false when no description was saved — the options that need one
  *   (same prompt / edit) are disabled.
+ * @param hasImage false when the image's bytes aren't on disk — nothing to save.
  */
 @Composable
 fun SceneImageMenu(
     expanded: Boolean,
     onDismiss: () -> Unit,
     hasPrompt: Boolean,
+    hasImage: Boolean,
     onSamePrompt: () -> Unit,
     onNewDescription: () -> Unit,
     onEditDescription: () -> Unit,
+    onSave: () -> Unit,
     onDelete: () -> Unit,
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
@@ -65,6 +69,9 @@ fun SceneImageMenu(
         }
         SceneMenuItem("Edit description", Icons.Filled.Edit, enabled = hasPrompt) {
             onDismiss(); onEditDescription()
+        }
+        SceneMenuItem("Save image", Icons.Filled.SaveAlt, enabled = hasImage) {
+            onDismiss(); onSave()
         }
         SceneMenuItem("Delete", Icons.Filled.Delete, tint = DcColors.Error) {
             onDismiss(); onDelete()

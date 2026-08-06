@@ -1,5 +1,10 @@
 package net.maz.llamachat.ui.chat
 
+import android.Manifest
+import android.os.Build
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
@@ -93,6 +98,8 @@ fun SceneImageViewerScreen(
     }
     val meta = message.sceneImage!!
     val currentId = message.id
+    val currentFile = message.attachments.firstOrNull()
+        ?.let { app.attachmentStore.fileFor(vm.convId, it) }
 
     var confirmDelete by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
@@ -102,6 +109,27 @@ fun SceneImageViewerScreen(
     fun regenerate(reuse: Boolean, edited: String?) {
         vm.regenerateScene(currentId, reusePrompt = reuse, editedPrompt = edited)
         onBack()
+    }
+
+    // Saving is permissionless from API 29; 26–28 needs the legacy write permission
+    // at the moment of export, so hold the image until it's granted.
+    val context = LocalContext.current
+    var pendingSave by remember { mutableStateOf<Long?>(null) }
+    fun toastSaveResult(msg: String) = Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+    val storagePermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) pendingSave?.let { vm.saveSceneImage(it, ::toastSaveResult) }
+        else toastSaveResult("Storage access denied")
+        pendingSave = null
+    }
+    fun save() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            pendingSave = currentId
+            storagePermLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        } else {
+            vm.saveSceneImage(currentId, ::toastSaveResult)
+        }
     }
 
     Column(Modifier.fillMaxSize().background(Color.Black)) {
@@ -180,9 +208,11 @@ fun SceneImageViewerScreen(
                     expanded = menuOpen,
                     onDismiss = { menuOpen = false },
                     hasPrompt = meta.prompt.isNotBlank(),
+                    hasImage = currentFile?.exists() == true,
                     onSamePrompt = { regenerate(reuse = true, edited = null) },
                     onNewDescription = { regenerate(reuse = false, edited = null) },
                     onEditDescription = { editPrompt = true },
+                    onSave = { save() },
                     onDelete = { confirmDelete = true },
                 )
             }

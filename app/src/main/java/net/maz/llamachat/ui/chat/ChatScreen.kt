@@ -272,6 +272,27 @@ fun ChatScreen(
         )
     }
 
+    // Saving a scene image to Pictures/PrivateAI is permissionless from API 29; 26–28
+    // needs the legacy write permission at the moment of export, so hold the image
+    // until it's granted.
+    var pendingSave by remember { mutableStateOf<Long?>(null) }
+    fun toastSaveResult(msg: String) = Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+    val storagePermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) pendingSave?.let { vm.saveSceneImage(it, ::toastSaveResult) }
+        else toastSaveResult("Storage access denied")
+        pendingSave = null
+    }
+    fun saveScene(messageId: Long) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            pendingSave = messageId
+            storagePermLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        } else {
+            vm.saveSceneImage(messageId, ::toastSaveResult)
+        }
+    }
+
     // The scene image whose "Edit description" was picked from its long-press menu;
     // generating appends a new image to the chat (the original is kept).
     var editScene by remember { mutableStateOf<ChatMessage?>(null) }
@@ -370,6 +391,7 @@ fun ChatScreen(
                                 onSamePrompt = { vm.regenerateScene(message.id, reusePrompt = true, editedPrompt = null) },
                                 onNewDescription = { vm.regenerateScene(message.id, reusePrompt = false, editedPrompt = null) },
                                 onEditDescription = { editScene = message },
+                                onSave = { saveScene(message.id) },
                                 onDelete = { vm.deleteSceneMessage(message.id) },
                             )
                             return@itemsIndexed
@@ -1182,11 +1204,12 @@ private fun SceneImageItem(
     onSamePrompt: () -> Unit,
     onNewDescription: () -> Unit,
     onEditDescription: () -> Unit,
+    onSave: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val meta = message.sceneImage ?: return
     val haptics = LocalHapticFeedback.current
-    // Long-press opens the regenerate/delete menu without opening (or revealing) the image.
+    // Long-press opens the image's action menu without opening (or revealing) it.
     var menuOpen by remember { mutableStateOf(false) }
     val openMenu = {
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -1197,9 +1220,11 @@ private fun SceneImageItem(
             expanded = menuOpen,
             onDismiss = { menuOpen = false },
             hasPrompt = meta.prompt.isNotBlank(),
+            hasImage = file != null && file.exists(),
             onSamePrompt = onSamePrompt,
             onNewDescription = onNewDescription,
             onEditDescription = onEditDescription,
+            onSave = onSave,
             onDelete = onDelete,
         )
     }

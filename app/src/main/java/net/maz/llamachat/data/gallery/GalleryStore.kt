@@ -66,20 +66,30 @@ class GalleryStore(private val context: Context) {
      * permission; on 26–28 the caller must already hold WRITE_EXTERNAL_STORAGE.
      */
     suspend fun exportToMediaStore(item: GalleryItemEntity): Result<Uri> =
+        exportToMediaStore(fileFor(item), item.fileName, item.mimeType)
+
+    /**
+     * The same export for a file this store doesn't own — chat attachments (a saved
+     * scene image) live under `AttachmentStore`, but land in the same public folder.
+     * A blank [mimeType] is guessed from the file's extension.
+     */
+    suspend fun exportToMediaStore(src: File, displayName: String, mimeType: String = ""): Result<Uri> =
         withContext(Dispatchers.IO) {
             runCatching {
-                val src = fileFor(item)
                 if (!src.exists()) error("File is missing")
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) exportModern(item, src)
-                else exportLegacy(item, src)
+                val mime = mimeType.ifBlank {
+                    MIME_BY_EXT[src.extension.lowercase()] ?: "application/octet-stream"
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) exportModern(src, displayName, mime)
+                else exportLegacy(src, displayName, mime)
             }
         }
 
-    private fun exportModern(item: GalleryItemEntity, src: File): Uri {
-        val (collection, dirName) = collectionFor(item.mimeType)
+    private fun exportModern(src: File, displayName: String, mimeType: String): Uri {
+        val (collection, dirName) = collectionFor(mimeType)
         val values = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, item.fileName)
-            put(MediaStore.MediaColumns.MIME_TYPE, item.mimeType)
+            put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
             put(MediaStore.MediaColumns.RELATIVE_PATH, "$dirName/$EXPORT_DIR")
             put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
@@ -97,15 +107,15 @@ class GalleryStore(private val context: Context) {
     }
 
     @Suppress("DEPRECATION") // pre-Q export path: DATA + public directories
-    private fun exportLegacy(item: GalleryItemEntity, src: File): Uri {
-        val (collection, dirName) = collectionFor(item.mimeType)
+    private fun exportLegacy(src: File, displayName: String, mimeType: String): Uri {
+        val (collection, dirName) = collectionFor(mimeType)
         val destDir = File(Environment.getExternalStoragePublicDirectory(dirName), EXPORT_DIR)
             .apply { mkdirs() }
-        val dest = File(destDir, item.fileName)
+        val dest = File(destDir, displayName)
         src.inputStream().use { input -> dest.outputStream().use { input.copyTo(it) } }
         val values = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, item.fileName)
-            put(MediaStore.MediaColumns.MIME_TYPE, item.mimeType)
+            put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
             put(MediaStore.MediaColumns.DATA, dest.absolutePath)
         }
         return context.contentResolver.insert(collection, values)
