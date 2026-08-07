@@ -56,6 +56,47 @@ object CharacterGenerator {
         )
     }
 
+    /**
+     * The chat request that rewrites an existing context block to the user's
+     * [instruction] (e.g. "make it longer", "give her a horse-riding hobby").
+     * Only the context is regenerated — name, greeting and the rest are untouched
+     * — so the reply is plain prose rather than the YAML sheet [request] asks for.
+     */
+    fun reviseRequest(
+        name: String,
+        currentContext: String,
+        instruction: String,
+        model: String,
+    ): ChatRequest {
+        val preset = Catalog.preset("Creative")
+        return ChatRequest(
+            model = model,
+            messages = listOf(
+                apiText("system", REVISE_SYSTEM),
+                apiText("user", revisePrompt(name, currentContext, instruction)),
+            ),
+            stream = true,
+            // Roomier than a fresh sheet: "make it longer" has to fit in here.
+            maxTokens = 1200,
+            temperature = preset.temperature,
+            topP = preset.topP,
+            topK = preset.topK,
+            minP = preset.minP,
+            repeatPenalty = preset.repeatPenalty,
+        )
+    }
+
+    /**
+     * Clean the revision reply into a bare context block: drop a code fence, and
+     * unwrap a `context:` key if the model reached for the YAML sheet anyway.
+     */
+    fun parseRevision(raw: String): String {
+        var text = extractYaml(raw) // same fence-stripping, whether or not it's YAML
+        val key = Regex("^context:\\s*[|>]?[-+]?\\s*\\n", RegexOption.IGNORE_CASE).find(text)
+        if (key != null) text = text.removeRange(key.range).trimEnd()
+        return dedent(text).trim().trim('"')
+    }
+
     /** Map the model's reply to a draft, falling back to raw prose on malformed YAML. */
     fun parse(raw: String, seed: CharacterSeed): CharacterDraft {
         CharacterYaml.parse(extractYaml(raw))?.let {
@@ -102,6 +143,41 @@ object CharacterGenerator {
         }
     }
 
+    private fun revisePrompt(name: String, currentContext: String, instruction: String): String =
+        buildString {
+            appendLine("Here is the existing context block (system prompt) for a chat character:")
+            appendLine()
+            appendLine("--- CURRENT CONTEXT ---")
+            appendLine(currentContext.trim().ifBlank { "(empty — write one from scratch)" })
+            appendLine("--- END CURRENT CONTEXT ---")
+            appendLine()
+            appendLine("The character's name is: ${name.trim().ifBlank { "{{char}}" }}")
+            appendLine()
+            appendLine("Rewrite it, applying this change:")
+            appendLine(instruction.trim())
+            appendLine()
+            appendLine("Rules:")
+            appendLine("- Keep everything the change does not touch: same person, same")
+            appendLine("  personality, background and speech style unless asked otherwise.")
+            appendLine("- Stay grounded and realistic — an ordinary person, not a")
+            appendLine("  larger-than-life figure — and keep the specific everyday details.")
+            appendLine("- Keep the second person voice, starting \"You are {{char}}, ...\".")
+            appendLine("- Keep the {{char}} and {{user}} placeholders exactly as written.")
+            appendLine()
+            appendLine("Reply with ONLY the new context block — no commentary, no code fences,")
+            appendLine("no YAML keys, no name or greeting.")
+        }
+
+    /** Strip the common leading indentation, so an accidental YAML literal block
+     *  ("context: |" plus two-space body) comes back as flush prose. */
+    private fun dedent(text: String): String {
+        val lines = text.lines()
+        val indent = lines.filter { it.isNotBlank() }
+            .minOfOrNull { line -> line.takeWhile { it == ' ' }.length } ?: 0
+        if (indent == 0) return text
+        return lines.joinToString("\n") { it.drop(minOf(indent, it.takeWhile { c -> c == ' ' }.length)) }
+    }
+
     /** Pull a fenced ```…``` block if the model wrapped its YAML in one; otherwise
      *  use the whole reply. Either way the result is fed to the YAML parser. */
     private fun extractYaml(raw: String): String {
@@ -114,6 +190,12 @@ object CharacterGenerator {
         "You design believable, down-to-earth people for a casual, slice-of-life " +
             "chat app — ordinary characters with realistic lives and relatable quirks. " +
             "You always answer with a single YAML document and nothing else."
+
+    private const val REVISE_SYSTEM =
+        "You edit the context blocks (system prompts) of believable, down-to-earth " +
+            "people for a casual, slice-of-life chat app. You make exactly the change " +
+            "you are asked for and leave the rest of the character intact. You always " +
+            "answer with the rewritten context block and nothing else."
 
     private val GENDERS = listOf("female", "male", "non-binary", "ambiguous", "any")
 

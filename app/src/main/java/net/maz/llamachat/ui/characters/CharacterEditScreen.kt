@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,25 +21,34 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -70,7 +80,9 @@ fun CharacterEditScreen(
     var context by remember { mutableStateOf(existing?.context ?: "") }
     var usesNamePrefixes by remember { mutableStateOf(existing?.usesNamePrefixes ?: true) }
     var color by remember { mutableStateOf(existing?.color ?: Catalog.palette.first()) }
+    var showAdjust by remember { mutableStateOf(false) }
 
+    val revise by vm.revise.collectAsState()
     val canSave = name.isNotBlank()
 
     Column(Modifier.fillMaxSize().background(DcColors.Surface)) {
@@ -116,12 +128,53 @@ fun CharacterEditScreen(
                 singleLine = false,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp),
             )
-            Text(
-                "{{char}} → this character's name · {{user}} → your name",
-                fontSize = 12.sp,
-                color = DcColors.OnSurfaceFaint,
-                modifier = Modifier.padding(top = 8.dp),
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            ) {
+                Text(
+                    "{{char}} → this character's name · {{user}} → your name",
+                    fontSize = 12.sp,
+                    color = DcColors.OnSurfaceFaint,
+                    modifier = Modifier.weight(1f).padding(end = 8.dp),
+                )
+                TextButton(
+                    onClick = { showAdjust = true },
+                    enabled = !revise.running,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                ) {
+                    if (revise.running) {
+                        CircularProgressIndicator(
+                            strokeWidth = 2.dp,
+                            color = DcColors.Primary,
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                    } else {
+                        Icon(
+                            Icons.Filled.AutoAwesome,
+                            contentDescription = null,
+                            tint = DcColors.Primary,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                    }
+                    Text(
+                        if (revise.running) "Adjusting…" else "Adjust with AI",
+                        color = DcColors.Primary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+            }
+            revise.error?.let { message ->
+                Text(
+                    message,
+                    fontSize = 12.sp,
+                    color = DcColors.Error,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
 
             Text(
                 "COLOUR",
@@ -209,4 +262,84 @@ fun CharacterEditScreen(
             }
         }
     }
+
+    if (showAdjust) {
+        AdjustContextDialog(
+            onDismiss = { showAdjust = false },
+            onAdjust = { instruction ->
+                showAdjust = false
+                vm.reviseContext(name, context, instruction) { context = it }
+            },
+        )
+    }
+}
+
+/**
+ * Collects a free-text instruction ("make it longer", "add a hobby of horse
+ * riding") for the LLM rewrite of the context block. The request itself runs in
+ * the ViewModel, so the dialog closes as soon as it is sent and the field is
+ * replaced in place when the reply lands.
+ */
+@Composable
+private fun AdjustContextDialog(
+    onDismiss: () -> Unit,
+    onAdjust: (String) -> Unit,
+) {
+    var text by rememberSaveable { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = DcColors.Surface,
+        title = { Text("Adjust context", color = DcColors.OnSurface) },
+        text = {
+            Column {
+                Text(
+                    "Describe the change you want. The character-generation model " +
+                        "rewrites the context block and replaces it here.",
+                    fontSize = 13.sp,
+                    color = DcColors.OnSurfaceMedium,
+                )
+                Spacer(Modifier.height(10.dp))
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(DcColors.SurfaceTint, RoundedCornerShape(10.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                ) {
+                    BasicTextField(
+                        value = text,
+                        onValueChange = { text = it },
+                        textStyle = LocalTextStyle.current.copy(
+                            fontSize = 15.sp,
+                            color = DcColors.OnSurface,
+                            lineHeight = 21.sp,
+                        ),
+                        cursorBrush = SolidColor(DcColors.Primary),
+                        decorationBox = { inner ->
+                            if (text.isEmpty()) {
+                                Text(
+                                    "e.g. make it longer, or give her a hobby of horse riding",
+                                    color = DcColors.OnSurfaceFaint,
+                                    fontSize = 15.sp,
+                                )
+                            }
+                            inner()
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 80.dp, max = 200.dp)
+                            .verticalScroll(rememberScrollState()),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onAdjust(text.trim()) },
+                enabled = text.isNotBlank(),
+            ) { Text("Adjust", color = DcColors.Primary) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel", color = DcColors.OnSurfaceVariant) }
+        },
+    )
 }
