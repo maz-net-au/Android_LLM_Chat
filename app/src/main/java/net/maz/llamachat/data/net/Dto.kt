@@ -24,6 +24,9 @@ data class ChatRequest(
     val stop: List<String>? = null,
     /** Token cap; bounds a "Continue" / "Impersonate" so it can't run away. */
     @SerialName("max_tokens") val maxTokens: Int? = null,
+    /** When true the server keeps generating past an EOS token (llama.cpp extension). */
+    @EncodeDefault
+    @SerialName("ignore_eos") val ignoreEos: Boolean = false,
     val temperature: Double? = null,
     @SerialName("top_p") val topP: Double? = null,
     @SerialName("top_k") val topK: Int? = null,

@@ -381,7 +381,7 @@ class ChatViewModel(
      *  conversation ends on a bare user turn (e.g. an empty reply was discarded, or a reply
      *  never landed), append a new assistant turn and generate a reply for it. This keeps a
      *  stranded chat recoverable with one tap. */
-    fun regenerate() {
+    fun regenerate(ignoreEos: Boolean = false) {
         if (isBusy()) return
         val conv = base ?: return
         val prefixes = conv.character.usesNamePrefixes
@@ -396,7 +396,7 @@ class ChatViewModel(
             )
             local.update { it.copy(selectedMsgId = null) }
             saveThen(updated) {
-                GenerationService.start(app, convId, assistantId, includePartial = prefixes, forceContinue = false, title = updated.title)
+                GenerationService.start(app, convId, assistantId, includePartial = prefixes, forceContinue = false, title = updated.title, ignoreEos = ignoreEos)
             }
             return
         }
@@ -409,15 +409,15 @@ class ChatViewModel(
         )
         local.update { it.copy(selectedMsgId = null) }
         saveThen(updated) {
-            GenerationService.start(app, convId, last.id, includePartial = prefixes, forceContinue = false, title = updated.title)
+            GenerationService.start(app, convId, last.id, includePartial = prefixes, forceContinue = false, title = updated.title, ignoreEos = ignoreEos)
         }
     }
 
-    fun continueMessage(id: Long) {
+    fun continueMessage(id: Long, ignoreEos: Boolean = false) {
         if (isBusy()) return
         local.update { it.copy(selectedMsgId = null) }
         // The partial is already in Room; the service reads and extends it.
-        GenerationService.start(app, convId, id, includePartial = true, forceContinue = true, title = base?.title ?: "")
+        GenerationService.start(app, convId, id, includePartial = true, forceContinue = true, title = base?.title ?: "", ignoreEos = ignoreEos)
     }
 
     /** Stop whatever is in flight — the reply generation and/or an impersonation.
@@ -443,14 +443,14 @@ class ChatViewModel(
      * @param continueInput keep what's already typed and generate the rest of that
      *   line; otherwise the box is cleared and the model writes the turn from scratch.
      */
-    fun impersonate(continueInput: Boolean = false) {
+    fun impersonate(continueInput: Boolean = false, ignoreEos: Boolean = false) {
         if (isBusy() || local.value.impersonating) return
         val conv = base ?: return
         val head = if (continueInput) local.value.input.trimEnd() else ""
         local.update { it.copy(impersonating = true, input = head, selectedMsgId = null) }
         impersonateJob = viewModelScope.launch {
             val s = app.settingsRepository.current()
-            val request = ChatRequestBuilder.impersonate(conv, s, prefill = head) { m ->
+            val request = ChatRequestBuilder.impersonate(conv, s, prefill = head, ignoreEos = ignoreEos) { m ->
                 m.attachments.mapNotNull { app.attachmentStore.toContentPart(convId, it) }
             }
             // ChatRequestBuilder folds the impersonation onto the prior assistant turn,

@@ -66,6 +66,7 @@ class GenerationService : Service() {
                     targetId = intent.getLongExtra(EXTRA_TARGET_ID, -1L),
                     includePartial = intent.getBooleanExtra(EXTRA_INCLUDE_PARTIAL, false),
                     forceContinue = intent.getBooleanExtra(EXTRA_FORCE_CONTINUE, false),
+                    ignoreEos = intent.getBooleanExtra(EXTRA_IGNORE_EOS, false),
                 )
             }
             else -> finish()
@@ -80,6 +81,7 @@ class GenerationService : Service() {
         targetId: Long,
         includePartial: Boolean,
         forceContinue: Boolean,
+        ignoreEos: Boolean = false,
     ) {
         if (convId < 0 || targetId < 0) {
             finish()
@@ -87,7 +89,7 @@ class GenerationService : Service() {
         }
         job?.cancel() // single-flight: a new request supersedes any in-flight one
         val launched = scope.launch {
-            generate(convId, targetId, includePartial, forceContinue)
+            generate(convId, targetId, includePartial, forceContinue, ignoreEos)
         }
         job = launched
         launched.invokeOnCompletion {
@@ -102,6 +104,7 @@ class GenerationService : Service() {
         targetId: Long,
         includePartial: Boolean,
         forceContinue: Boolean,
+        ignoreEos: Boolean = false,
     ) {
         val controller = app.generation
         val repo = app.conversationRepository
@@ -120,7 +123,7 @@ class GenerationService : Service() {
         // genuinely empty reply (model emitted nothing) from a real one.
         val prefix = if (conv.character.usesNamePrefixes) "${conv.characterName}: " else ""
         val store = app.attachmentStore
-        val request = ChatRequestBuilder.reply(conv, idx, includePartial, forceContinue, s) { m ->
+        val request = ChatRequestBuilder.reply(conv, idx, includePartial, forceContinue, s, ignoreEos) { m ->
             m.attachments.mapNotNull { store.toContentPart(convId, it) }
         }
 
@@ -316,6 +319,7 @@ class GenerationService : Service() {
         private const val EXTRA_TARGET_ID = "targetId"
         private const val EXTRA_INCLUDE_PARTIAL = "includePartial"
         private const val EXTRA_FORCE_CONTINUE = "forceContinue"
+        private const val EXTRA_IGNORE_EOS = "ignoreEos"
         private const val EXTRA_TITLE = "title"
 
         private val PENDING_FLAGS =
@@ -329,6 +333,7 @@ class GenerationService : Service() {
             includePartial: Boolean,
             forceContinue: Boolean,
             title: String,
+            ignoreEos: Boolean = false,
         ) {
             val intent = Intent(context, GenerationService::class.java).apply {
                 action = ACTION_START
@@ -337,6 +342,7 @@ class GenerationService : Service() {
                 putExtra(EXTRA_INCLUDE_PARTIAL, includePartial)
                 putExtra(EXTRA_FORCE_CONTINUE, forceContinue)
                 putExtra(EXTRA_TITLE, title)
+                putExtra(EXTRA_IGNORE_EOS, ignoreEos)
             }
             ContextCompat.startForegroundService(context, intent)
         }

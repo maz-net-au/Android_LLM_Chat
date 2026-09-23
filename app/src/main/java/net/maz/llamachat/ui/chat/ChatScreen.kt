@@ -82,10 +82,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -107,7 +109,9 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import net.maz.llamachat.LlamaChatApp
 import net.maz.llamachat.data.comfy.ComfyJobStatus
 import net.maz.llamachat.data.model.Attachment
@@ -428,6 +432,7 @@ fun ChatScreen(
                             onSaveEdit = vm::saveEdit,
                             onCancelEdit = vm::cancelEdit,
                             onContinue = { vm.continueMessage(message.id) },
+                            onHoldContinue = { vm.continueMessage(message.id, ignoreEos = true) },
                             onDelete = vm::deleteLastAssistant,
                             onPrevVariant = { vm.prevVariant(message.id) },
                             onNextVariant = { vm.nextVariant(message.id) },
@@ -454,6 +459,9 @@ fun ChatScreen(
                 onRegenerate = vm::regenerate,
                 onImpersonate = { vm.impersonate() },
                 onContinueImpersonate = { vm.impersonate(continueInput = true) },
+                onHoldRegenerate = { vm.regenerate(ignoreEos = true) },
+                onHoldImpersonate = { vm.impersonate(ignoreEos = true) },
+                onHoldContinueImpersonate = { vm.impersonate(continueInput = true, ignoreEos = true) },
             )
         }
 
@@ -618,6 +626,7 @@ private fun MessageItem(
     onDelete: () -> Unit,
     onPrevVariant: () -> Unit,
     onNextVariant: () -> Unit,
+    onHoldContinue: (() -> Unit)? = null,
 ) {
     val isUser = message.role == Role.USER
     Row(
@@ -640,7 +649,7 @@ private fun MessageItem(
                 }
                 // Locked (summarized) messages are frozen: no edit/continue/delete.
                 if (selected && !locked) {
-                    SelectedActions(isLastAssistant, onCopy, onStartEdit, onContinue, onDelete)
+                    SelectedActions(isLastAssistant, onCopy, onStartEdit, onContinue, onDelete, onHoldContinue)
                 }
             }
         }
@@ -790,14 +799,14 @@ private fun VariantNav(message: ChatMessage, onPrev: () -> Unit, onNext: () -> U
 }
 
 @Composable
-private fun SelectedActions(isLastAssistant: Boolean, onCopy: () -> Unit, onEdit: () -> Unit, onContinue: () -> Unit, onDelete: () -> Unit) {
+private fun SelectedActions(isLastAssistant: Boolean, onCopy: () -> Unit, onEdit: () -> Unit, onContinue: () -> Unit, onDelete: () -> Unit, onHoldContinue: (() -> Unit)? = null) {
     Row(modifier = Modifier.padding(top = 5.dp)) {
         ActionChip("Copy", Icons.Filled.ContentCopy, DcColors.OnSurfaceMedium, onCopy)
         Spacer(Modifier.width(6.dp))
         ActionChip("Edit", Icons.Filled.Edit, DcColors.OnSurfaceMedium, onEdit)
         if (isLastAssistant) {
             Spacer(Modifier.width(6.dp))
-            ActionChip("Continue", Icons.Filled.PlayArrow, DcColors.Primary, onContinue)
+            ActionChip("Continue", Icons.Filled.PlayArrow, DcColors.Primary, onContinue, onHold = onHoldContinue)
             Spacer(Modifier.width(6.dp))
             ActionChip("Delete", Icons.Filled.Delete, DcColors.Error, onDelete)
         }
@@ -805,10 +814,11 @@ private fun SelectedActions(isLastAssistant: Boolean, onCopy: () -> Unit, onEdit
 }
 
 @Composable
-private fun ActionChip(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, tint: Color, onClick: () -> Unit) {
+private fun ActionChip(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, tint: Color, onClick: () -> Unit, onHold: (() -> Unit)? = null) {
     Row(
         modifier = Modifier
             .background(DcColors.SurfaceTint, RoundedCornerShape(14.dp))
+            .then(onHold?.let { h -> Modifier.holdToAction(true, h) } ?: Modifier)
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -869,6 +879,9 @@ private fun ActionRow(
     onRegenerate: () -> Unit,
     onImpersonate: () -> Unit,
     onContinueImpersonate: () -> Unit,
+    onHoldRegenerate: (() -> Unit)? = null,
+    onHoldImpersonate: (() -> Unit)? = null,
+    onHoldContinueImpersonate: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 8.dp),
@@ -882,10 +895,12 @@ private fun ActionRow(
                 continueEnabled = continueImpersonateEnabled,
                 onFresh = onImpersonate,
                 onContinue = onContinueImpersonate,
+                onHoldFresh = onHoldImpersonate,
+                onHoldContinue = onHoldContinueImpersonate,
             )
         }
         Spacer(Modifier.width(8.dp))
-        PillButton("Regenerate", Icons.Filled.Refresh, enabled = regenerateEnabled, borderColor = DcColors.Primary, contentColor = DcColors.Primary, onClick = onRegenerate)
+        PillButton("Regenerate", Icons.Filled.Refresh, enabled = regenerateEnabled, borderColor = DcColors.Primary, contentColor = DcColors.Primary, onClick = onRegenerate, onHold = onHoldRegenerate)
     }
 }
 
@@ -900,6 +915,8 @@ private fun ImpersonatePill(
     continueEnabled: Boolean,
     onFresh: () -> Unit,
     onContinue: () -> Unit,
+    onHoldFresh: (() -> Unit)? = null,
+    onHoldContinue: (() -> Unit)? = null,
 ) {
     val shape = RoundedCornerShape(18.dp)
     val border = DcColors.OnSurface.copy(alpha = 0.2f)
@@ -913,6 +930,7 @@ private fun ImpersonatePill(
     ) {
         Row(
             modifier = Modifier
+                .then(onHoldFresh?.let { h -> Modifier.holdToAction(enabled, h) } ?: Modifier)
                 .clickable(enabled = enabled, onClick = onFresh)
                 .padding(start = 16.dp, end = 12.dp, top = 7.dp, bottom = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -925,6 +943,7 @@ private fun ImpersonatePill(
         Box(Modifier.width(1.dp).height(22.dp).background(outline))
         Box(
             modifier = Modifier
+                .then(onHoldContinue?.let { h -> Modifier.holdToAction(continueEnabled, h) } ?: Modifier)
                 .clickable(enabled = continueEnabled, onClick = onContinue)
                 .padding(horizontal = 13.dp, vertical = 7.dp),
         ) {
@@ -938,13 +957,44 @@ private fun ImpersonatePill(
     }
 }
 
+/**
+ * Fires [onHold] when the pointer stays pressed for 3 seconds. A short press falls
+ * through to whatever [clickable] is already on the chain (the tap still works); a
+ * long hold fires the action once, then keeps the press alive so release does nothing.
+ */
 @Composable
-private fun PillButton(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, enabled: Boolean, borderColor: Color, contentColor: Color, onClick: () -> Unit) {
+private fun Modifier.holdToAction(enabled: Boolean, onHold: () -> Unit): Modifier = composed {
+    val scope = rememberCoroutineScope()
+    this.pointerInput(enabled) {
+        detectTapGestures(
+            onPress = {
+                if (!enabled) return@detectTapGestures
+                var fired = false
+                scope.launch {
+                    try {
+                        delay(3_000)
+                        if (!fired) {
+                            fired = true
+                            onHold()
+                        }
+                    } catch (_: CancellationException) {
+                        // Press released before the 3s mark.
+                    }
+                }
+                tryAwaitRelease()
+            },
+        )
+    }
+}
+
+@Composable
+private fun PillButton(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, enabled: Boolean, borderColor: Color, contentColor: Color, onClick: () -> Unit, onHold: (() -> Unit)? = null) {
     val alpha = if (enabled) 1f else 0.4f
     Row(
         modifier = Modifier
             .background(DcColors.Surface, RoundedCornerShape(18.dp))
             .border(1.dp, borderColor.copy(alpha = (borderColor.alpha * alpha)), RoundedCornerShape(18.dp))
+            .then(onHold?.let { h -> Modifier.holdToAction(enabled, h) } ?: Modifier)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,

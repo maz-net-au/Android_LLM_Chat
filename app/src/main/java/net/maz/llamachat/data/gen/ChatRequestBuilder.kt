@@ -37,6 +37,7 @@ object ChatRequestBuilder {
         includePartial: Boolean,
         forceContinue: Boolean,
         s: SettingsRepository.Settings,
+        ignoreEos: Boolean = false,
         attachmentPart: (ChatMessage) -> List<JsonElement> = NO_ATTACHMENTS,
     ): ChatRequest {
         val out = ArrayList<ApiMessage>()
@@ -56,8 +57,10 @@ object ChatRequestBuilder {
             conv = conv,
             messages = out,
             s = s,
-            // Bound a continue so it can't run away; EOS is respected so it stops naturally.
-            maxTokens = if (forceContinue) 1000 else null,
+            // A forced continue is capped so it can't run away; with ignore_eos set the
+            // cap is the only thing that stops it, so every long-press path gets one.
+            maxTokens = if (forceContinue || ignoreEos) 1000 else null,
+            ignoreEos = ignoreEos,
         )
     }
 
@@ -79,6 +82,7 @@ object ChatRequestBuilder {
         conv: Conversation,
         s: SettingsRepository.Settings,
         prefill: String = "",
+        ignoreEos: Boolean = false,
         attachmentPart: (ChatMessage) -> List<JsonElement> = NO_ATTACHMENTS,
     ): ChatRequest {
         val out = ArrayList<ApiMessage>()
@@ -104,7 +108,7 @@ object ChatRequestBuilder {
                 out += apiMessage(m, attachmentPart)
             }
         }
-        return request(conv, out, s, maxTokens = 1000)
+        return request(conv, out, s, maxTokens = 1000, ignoreEos = ignoreEos)
     }
 
     /**
@@ -228,6 +232,7 @@ object ChatRequestBuilder {
         messages: List<ApiMessage>,
         s: SettingsRepository.Settings,
         maxTokens: Int?,
+        ignoreEos: Boolean = false,
     ): ChatRequest {
         val preset = conv.effectivePreset
         return ChatRequest(
@@ -237,6 +242,7 @@ object ChatRequestBuilder {
             stop = if (conv.character.usesNamePrefixes)
                 listOf("${conv.userName}:", "${conv.characterName}:") else null,
             maxTokens = maxTokens,
+            ignoreEos = ignoreEos,
             temperature = preset.temperature,
             topP = preset.topP,
             topK = preset.topK,
