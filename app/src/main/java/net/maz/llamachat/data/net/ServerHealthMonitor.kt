@@ -99,11 +99,15 @@ class ServerHealthMonitor(
     }
 
     private suspend fun fetchModels(s: SettingsRepository.Settings): List<String> {
-        val list = llamaClient.listModels(s.ip, s.port).getOrNull()?.ifEmpty { null }
-            ?: Catalog.fallbackModels
-        // Pin a current model the server actually offers.
-        if (list != _state.value.models && settings.current().currentModel !in list) {
-            settings.setCurrentModel(list.first())
+        val reported = llamaClient.listModels(s.ip, s.port).getOrNull().orEmpty()
+        // A reachable server with no model loaded (yet) reports an empty list. Only a
+        // list containing real names is authoritative: falling back to fallbackModels
+        // ([""]) and re-pinning would clobber the user's chosen model with "".
+        val list = if (reported.any { it.isNotBlank() }) reported else Catalog.fallbackModels
+        if (list != _state.value.models && list.any { it.isNotBlank() } &&
+            settings.current().currentModel !in list
+        ) {
+            settings.setCurrentModel(list.first { it.isNotBlank() })
         }
         return list
     }
