@@ -108,6 +108,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import net.maz.llamachat.LlamaChatApp
@@ -972,16 +973,13 @@ private fun Modifier.holdToAction(enabled: Boolean, onHold: () -> Unit): Modifie
         detectTapGestures(
             onPress = {
                 if (!enabled) return@detectTapGestures
-                var fired = false
-                awaitPointerEventScope {
-                    launch {
+                coroutineScope {
+                    val holdJob = launch {
                         delay(3_000)
-                        if (!fired) {
-                            fired = true
-                            onHold()
-                        }
+                        onHold()
                     }
                     tryAwaitRelease()
+                    holdJob.cancel()
                 }
             },
         )
