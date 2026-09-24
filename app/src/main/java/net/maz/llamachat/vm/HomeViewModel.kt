@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import net.maz.llamachat.LlamaChatApp
 import net.maz.llamachat.data.ConversationRepository
+import net.maz.llamachat.data.IdGen
 import net.maz.llamachat.data.backup.BackupCodec
 import net.maz.llamachat.data.model.Catalog
 import net.maz.llamachat.data.model.Conversation
@@ -41,10 +42,11 @@ class HomeViewModel(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), HomeUiState())
 
     /**
-     * Restore a conversation from the backup file at [uri]. Best-effort decode; overwrites
-     * any existing conversation with the same id. Reports whether the referenced character
-     * is missing (the chat still restores and re-links if it's created later). Reads and
-     * writes on the IO dispatcher so a large (image-heavy) backup doesn't block the UI.
+     * Import a conversation from the backup file at [uri] as a NEW conversation with a
+     * fresh id, so an existing conversation can never be clobbered. Best-effort decode;
+     * reports whether the referenced character is missing (the chat still imports and
+     * re-links if it's created later). Reads and writes on the IO dispatcher so a large
+     * (image-heavy) backup doesn't block the UI.
      */
     fun import(uri: Uri, onResult: (ImportResult) -> Unit) {
         viewModelScope.launch {
@@ -57,10 +59,12 @@ class HomeViewModel(
                 onResult(ImportResult.Failed)
                 return@launch
             }
-            val conv = parsed.toDomain()
+            val imported = parsed.toDomain()
+            val conv = imported.copy(id = IdGen.next())
             repo.save(conv)
-            // Restore any inlined attachment bytes into the conversation's dir (overwrite-by-id
-            // means conv.id matches what the metadata points at). Text-only files carry none.
+            // Restore any inlined attachment bytes into the imported conversation's dir.
+            // conv carries the fresh id, so the bytes always land beside the new copy.
+            // Text-only files carry none.
             if (parsed.attachmentBytes.isNotEmpty()) {
                 withContext(Dispatchers.IO) {
                     conv.messages.asSequence().flatMap { it.attachments }.forEach { att ->
