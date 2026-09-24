@@ -82,12 +82,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -962,26 +960,29 @@ private fun ImpersonatePill(
  * through to whatever [clickable] is already on the chain (the tap still works); a
  * long hold fires the action once, then keeps the press alive so release does nothing.
  */
-@Composable
-private fun Modifier.holdToAction(enabled: Boolean, onHold: () -> Unit): Modifier = composed {
-    val scope = rememberCoroutineScope()
-    this.pointerInput(enabled) {
+/**
+ * Fires [onHold] when the pointer stays pressed for 3 seconds. The hold timer runs in
+ * the pointer session's own coroutine (awaitPointerEvent scope), not a remembered
+ * composition scope, so it can't be cancelled by a recomposition mid-press. A short
+ * press falls through to whatever [clickable] is already on the chain; once the hold
+ * fires, release does nothing extra.
+ */
+private fun Modifier.holdToAction(enabled: Boolean, onHold: () -> Unit): Modifier {
+    return this.pointerInput(enabled) {
         detectTapGestures(
             onPress = {
                 if (!enabled) return@detectTapGestures
                 var fired = false
-                scope.launch {
-                    try {
+                awaitPointerEventScope {
+                    launch {
                         delay(3_000)
                         if (!fired) {
                             fired = true
                             onHold()
                         }
-                    } catch (_: CancellationException) {
-                        // Press released before the 3s mark.
                     }
+                    tryAwaitRelease()
                 }
-                tryAwaitRelease()
             },
         )
     }
