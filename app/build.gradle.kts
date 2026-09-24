@@ -5,6 +5,13 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+// Room emits a per-version schema JSON under app/schemas (checked in) so the
+// hand-written migrations can be verified/tested against them. (KSP arg form of
+// the room {} DSL, whose Gradle plugin isn't in the offline dependency cache.)
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 android {
     namespace = "net.maz.llamachat"
     compileSdk = 34
