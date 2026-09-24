@@ -107,10 +107,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import net.maz.llamachat.LlamaChatApp
 import net.maz.llamachat.data.comfy.ComfyJobStatus
 import net.maz.llamachat.data.model.Attachment
@@ -396,7 +393,7 @@ fun ChatScreen(
                                 onEditDescription = { editScene = message },
                                 // Only a vision model can look at what it's handed.
                                 canShare = state.canAttachImage && !state.streaming &&
-                                    !state.impersonating && !state.summarizing,
+                                        !state.impersonating && !state.summarizing,
                                 onShare = { vm.shareSceneImage(message.id) },
                                 onSave = { saveScene(message.id) },
                                 onDelete = { vm.deleteSceneMessage(message.id) },
@@ -453,7 +450,7 @@ fun ChatScreen(
                 impersonateEnabled = !state.streaming && !state.impersonating && lastIsAssistant,
                 // Continuing needs something to continue from.
                 continueImpersonateEnabled = !state.streaming && !state.impersonating &&
-                    lastIsAssistant && state.input.isNotBlank(),
+                        lastIsAssistant && state.input.isNotBlank(),
                 onStop = vm::stop,
                 onRegenerate = vm::regenerate,
                 onImpersonate = { vm.impersonate() },
@@ -812,13 +809,13 @@ private fun SelectedActions(isLastAssistant: Boolean, onCopy: () -> Unit, onEdit
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ActionChip(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, tint: Color, onClick: () -> Unit, onHold: (() -> Unit)? = null) {
     Row(
         modifier = Modifier
             .background(DcColors.SurfaceTint, RoundedCornerShape(14.dp))
-            .then(onHold?.let { h -> Modifier.holdToAction(true, h) } ?: Modifier)
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onHold)
             .padding(horizontal = 10.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -908,6 +905,7 @@ private fun ActionRow(
  * input box and writes the user's turn from scratch, the ▶ half keeps the typed text
  * and generates the rest of that line (so it's dead until something is typed).
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ImpersonatePill(
     enabled: Boolean,
@@ -929,8 +927,7 @@ private fun ImpersonatePill(
     ) {
         Row(
             modifier = Modifier
-                .then(onHoldFresh?.let { h -> Modifier.holdToAction(enabled, h) } ?: Modifier)
-                .clickable(enabled = enabled, onClick = onFresh)
+                .combinedClickable(enabled = enabled, onClick = onFresh, onLongClick = onHoldFresh)
                 .padding(start = 16.dp, end = 12.dp, top = 7.dp, bottom = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -942,8 +939,7 @@ private fun ImpersonatePill(
         Box(Modifier.width(1.dp).height(22.dp).background(outline))
         Box(
             modifier = Modifier
-                .then(onHoldContinue?.let { h -> Modifier.holdToAction(continueEnabled, h) } ?: Modifier)
-                .clickable(enabled = continueEnabled, onClick = onContinue)
+                .combinedClickable(enabled = continueEnabled, onClick = onContinue, onLongClick = onHoldContinue)
                 .padding(horizontal = 13.dp, vertical = 7.dp),
         ) {
             Icon(
@@ -956,36 +952,7 @@ private fun ImpersonatePill(
     }
 }
 
-/**
- * Fires [onHold] when the pointer stays pressed for 3 seconds. A short press falls
- * through to whatever [clickable] is already on the chain (the tap still works); a
- * long hold fires the action once, then keeps the press alive so release does nothing.
- */
-/**
- * Fires [onHold] when the pointer stays pressed for 3 seconds. The hold timer runs in
- * the pointer session's own coroutine (awaitPointerEvent scope), not a remembered
- * composition scope, so it can't be cancelled by a recomposition mid-press. A short
- * press falls through to whatever [clickable] is already on the chain; once the hold
- * fires, release does nothing extra.
- */
-private fun Modifier.holdToAction(enabled: Boolean, onHold: () -> Unit): Modifier {
-    return this.pointerInput(enabled) {
-        detectTapGestures(
-            onPress = {
-                if (!enabled) return@detectTapGestures
-                coroutineScope {
-                    val holdJob = launch {
-                        delay(3_000)
-                        onHold()
-                    }
-                    tryAwaitRelease()
-                    holdJob.cancel()
-                }
-            },
-        )
-    }
-}
-
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PillButton(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, enabled: Boolean, borderColor: Color, contentColor: Color, onClick: () -> Unit, onHold: (() -> Unit)? = null) {
     val alpha = if (enabled) 1f else 0.4f
@@ -993,8 +960,9 @@ private fun PillButton(label: String, icon: androidx.compose.ui.graphics.vector.
         modifier = Modifier
             .background(DcColors.Surface, RoundedCornerShape(18.dp))
             .border(1.dp, borderColor.copy(alpha = (borderColor.alpha * alpha)), RoundedCornerShape(18.dp))
-            .then(onHold?.let { h -> Modifier.holdToAction(enabled, h) } ?: Modifier)
-            .clickable(enabled = enabled, onClick = onClick)
+            // Standard tap + long-press: a quick release taps (onClick); holding to
+            // the platform long-press timeout fires (onLongClick) with a haptic.
+            .combinedClickable(enabled = enabled, onClick = onClick, onLongClick = onHold)
             .padding(horizontal = 16.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
