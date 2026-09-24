@@ -64,6 +64,7 @@ class GenerationService : Service() {
                 startGeneration(
                     convId = intent.getLongExtra(EXTRA_CONV_ID, -1L),
                     targetId = intent.getLongExtra(EXTRA_TARGET_ID, -1L),
+                    token = intent.getLongExtra(EXTRA_TOKEN, 0L),
                     includePartial = intent.getBooleanExtra(EXTRA_INCLUDE_PARTIAL, false),
                     forceContinue = intent.getBooleanExtra(EXTRA_FORCE_CONTINUE, false),
                     ignoreEos = intent.getBooleanExtra(EXTRA_IGNORE_EOS, false),
@@ -79,6 +80,7 @@ class GenerationService : Service() {
     private fun startGeneration(
         convId: Long,
         targetId: Long,
+        token: Long,
         includePartial: Boolean,
         forceContinue: Boolean,
         ignoreEos: Boolean = false,
@@ -89,7 +91,7 @@ class GenerationService : Service() {
         }
         job?.cancel() // single-flight: a new request supersedes any in-flight one
         val launched = scope.launch {
-            generate(convId, targetId, includePartial, forceContinue, ignoreEos)
+            generate(convId, targetId, token, includePartial, forceContinue, ignoreEos)
         }
         job = launched
         launched.invokeOnCompletion {
@@ -102,6 +104,7 @@ class GenerationService : Service() {
     private suspend fun generate(
         convId: Long,
         targetId: Long,
+        token: Long,
         includePartial: Boolean,
         forceContinue: Boolean,
         ignoreEos: Boolean = false,
@@ -111,9 +114,9 @@ class GenerationService : Service() {
         val settings: SettingsRepository = app.settingsRepository
         val client = app.llamaClient
 
-        val conv = repo.get(convId) ?: return
+        val conv = repo.get(convId) ?: run { controller.end(token); return }
         val idx = conv.messages.indexOfFirst { it.id == targetId }
-        if (idx < 0) return
+        if (idx < 0) run { controller.end(token); return }
         val s = settings.current()
 
         // Continue (and the transcript-mode prefill) extend the existing text as-is:
@@ -127,7 +130,9 @@ class GenerationService : Service() {
             m.attachments.mapNotNull { store.toContentPart(convId, it) }
         }
 
-        val token = controller.begin(convId, targetId, base)
+        // Token was armed synchronously by the ViewModel before the service started; re-sync
+        // the overlay's base text to Room's copy (it may diverge, e.g. a concurrent edit).
+        controller.update(token, base)
         try {
             // Some servers occasionally return a stream that completes with no
             // content. Rather than store an empty turn, re-request a few times, then
@@ -321,6 +326,7 @@ class GenerationService : Service() {
         private const val EXTRA_FORCE_CONTINUE = "forceContinue"
         private const val EXTRA_IGNORE_EOS = "ignoreEos"
         private const val EXTRA_TITLE = "title"
+        private const val EXTRA_TOKEN = "token"
 
         private val PENDING_FLAGS =
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -330,6 +336,7 @@ class GenerationService : Service() {
             context: Context,
             convId: Long,
             targetId: Long,
+            token: Long,
             includePartial: Boolean,
             forceContinue: Boolean,
             title: String,
@@ -339,6 +346,7 @@ class GenerationService : Service() {
                 action = ACTION_START
                 putExtra(EXTRA_CONV_ID, convId)
                 putExtra(EXTRA_TARGET_ID, targetId)
+                putExtra(EXTRA_TOKEN, token)
                 putExtra(EXTRA_INCLUDE_PARTIAL, includePartial)
                 putExtra(EXTRA_FORCE_CONTINUE, forceContinue)
                 putExtra(EXTRA_TITLE, title)

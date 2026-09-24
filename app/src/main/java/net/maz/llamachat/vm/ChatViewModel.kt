@@ -306,8 +306,12 @@ class ChatViewModel(
                 ChatMessage.assistant(assistantId, if (prefixes) "${conv.characterName}: " else ""),
         )
         local.update { it.copy(input = "", selectedMsgId = null, pendingImage = null) }
+        // Arm the streaming guard synchronously so a second quick tap sees isBusy() == true
+        // and doesn't cancel the first run.
+        val baseText = if (prefixes) "${conv.characterName}: " else ""
+        val token = controller.begin(convId, assistantId, baseText)
         saveThen(updated) {
-            GenerationService.start(app, convId, assistantId, includePartial = prefixes, forceContinue = false, title = updated.title)
+            GenerationService.start(app, convId, assistantId, token, includePartial = prefixes, forceContinue = false, title = updated.title)
         }
     }
 
@@ -395,8 +399,11 @@ class ChatViewModel(
                 messages = conv.messages + ChatMessage.assistant(assistantId, prefill),
             )
             local.update { it.copy(selectedMsgId = null) }
+            // Arm the streaming guard synchronously so a second quick tap on Regenerate sees
+            // isBusy() == true and doesn't cancel the first run.
+            val token = controller.begin(convId, assistantId, prefill)
             saveThen(updated) {
-                GenerationService.start(app, convId, assistantId, includePartial = prefixes, forceContinue = false, title = updated.title, ignoreEos = ignoreEos)
+                GenerationService.start(app, convId, assistantId, token, includePartial = prefixes, forceContinue = false, title = updated.title, ignoreEos = ignoreEos)
             }
             return
         }
@@ -408,16 +415,22 @@ class ChatViewModel(
             },
         )
         local.update { it.copy(selectedMsgId = null) }
+        // Arm the streaming guard synchronously so a second quick tap on Regenerate sees
+        // isBusy() == true and doesn't cancel the first run.
+        val token = controller.begin(convId, last.id, prefill)
         saveThen(updated) {
-            GenerationService.start(app, convId, last.id, includePartial = prefixes, forceContinue = false, title = updated.title, ignoreEos = ignoreEos)
+            GenerationService.start(app, convId, last.id, token, includePartial = prefixes, forceContinue = false, title = updated.title, ignoreEos = ignoreEos)
         }
     }
 
     fun continueMessage(id: Long, ignoreEos: Boolean = false) {
         if (isBusy()) return
         local.update { it.copy(selectedMsgId = null) }
+        // Arm the streaming guard synchronously.
+        val baseText = base?.messages?.firstOrNull { it.id == id }?.text ?: ""
+        val token = controller.begin(convId, id, baseText)
         // The partial is already in Room; the service reads and extends it.
-        GenerationService.start(app, convId, id, includePartial = true, forceContinue = true, title = base?.title ?: "", ignoreEos = ignoreEos)
+        GenerationService.start(app, convId, id, token, includePartial = true, forceContinue = true, title = base?.title ?: "", ignoreEos = ignoreEos)
     }
 
     /** Stop whatever is in flight — the reply generation and/or an impersonation.

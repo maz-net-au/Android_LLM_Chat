@@ -1,7 +1,9 @@
 package net.maz.llamachat.data.net
 
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
@@ -269,5 +271,7 @@ class LlamaClient {
 
         val eventSource = EventSources.createFactory(client).newEventSource(request, listener)
         awaitClose { eventSource.cancel() }
-    }
+    // 256-slot buffer (SUSPEND) so fast token bursts are never dropped while the
+    // collector is busy persisting 150ms checkpoints.
+    }.buffer(256, onBufferOverflow = BufferOverflow.SUSPEND)
 }
