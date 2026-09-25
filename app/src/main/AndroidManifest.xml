@@ -31,15 +31,9 @@
         android:name="android.hardware.camera"
         android:required="false" />
 
-    <!-- allowBackup=false: the app stores the full conversation history, character
-         library and raw attachment bytes (images/voice) under filesDir. With default
-         allowBackup=true and no exclusion rules, all of that is eligible for Android /
-         Google Drive backup. This is a privacy-focused chat app with its own
-         conversation export format, so system backup is disabled to keep private data
-         on-device. -->
     <application
         android:name=".LlamaChatApp"
-        android:allowBackup="false"
+        android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
