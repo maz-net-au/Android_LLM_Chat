@@ -53,6 +53,9 @@ data class SceneImageMeta(
     val workflowId: Long = -1L,
     val status: String = STATUS_DESCRIBING,
     val error: String = "",
+    /** The prompt was supplied verbatim (e.g. copied from a chat message), so there
+     *  is no describe step to re-run — regenerate/retry reuse it directly. */
+    val verbatimPrompt: Boolean = false,
 ) {
     companion object {
         const val STATUS_DESCRIBING = "describing"

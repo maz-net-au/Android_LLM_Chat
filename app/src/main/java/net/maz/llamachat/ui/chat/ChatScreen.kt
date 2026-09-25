@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Message
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -255,6 +256,9 @@ fun ChatScreen(
     val lastAssistantIndex = messages.indexOfLast { it.role == Role.ASSISTANT && !it.isSceneImage }
     val lastRealRole = messages.lastOrNull { !it.isSceneImage }?.role
     val lastIsAssistant = lastRealRole == Role.ASSISTANT
+    // The attach menu's "Current message" feeds the last LLM reply straight into the
+    // image model as its prompt — no describe call, verbatim.
+    val lastAssistantText = messages.getOrNull(lastAssistantIndex)?.text.orEmpty()
     // A chat left on a bare user turn (e.g. the model returned an empty reply that was
     // discarded, or a reply never landed) still needs a way forward — offer Regenerate,
     // which appends a fresh assistant turn and generates a reply for it.
@@ -475,6 +479,7 @@ fun ChatScreen(
             canAttachImage = state.canAttachImage,
             canRecordAudio = state.canRecordAudio,
             sceneImageEnabled = state.sceneImageEnabled,
+            currentMessagePrompt = lastAssistantText,
             recording = state.recording,
             pendingImageFile = state.pendingImage?.let { app.attachmentStore.fileFor(vm.convId, it) },
             onInputChange = vm::setInput,
@@ -482,6 +487,7 @@ fun ChatScreen(
             onPickGallery = ::pickGallery,
             onTakePhoto = ::takePhoto,
             onSceneImage = { sceneFocus = "" },
+            onCurrentMessage = { vm.generateSceneFromText(lastAssistantText) },
             onRemovePendingImage = vm::removePendingImage,
             onStartRecording = ::startRecording,
             onStopRecording = { vm.stopRecording() },
@@ -979,6 +985,7 @@ private fun InputBar(
     canAttachImage: Boolean,
     canRecordAudio: Boolean,
     sceneImageEnabled: Boolean,
+    currentMessagePrompt: String,
     recording: Boolean,
     pendingImageFile: File?,
     onInputChange: (String) -> Unit,
@@ -986,6 +993,7 @@ private fun InputBar(
     onPickGallery: () -> Unit,
     onTakePhoto: () -> Unit,
     onSceneImage: () -> Unit,
+    onCurrentMessage: () -> Unit,
     onRemovePendingImage: () -> Unit,
     onStartRecording: () -> Unit,
     onStopRecording: () -> Unit,
@@ -1007,9 +1015,11 @@ private fun InputBar(
                 enabled = sendEnabled,
                 canAttachImage = canAttachImage,
                 sceneImageEnabled = sceneImageEnabled,
+                currentMessagePrompt = currentMessagePrompt,
                 onPickGallery = onPickGallery,
                 onTakePhoto = onTakePhoto,
                 onSceneImage = onSceneImage,
+                onCurrentMessage = onCurrentMessage,
             )
             Spacer(Modifier.width(8.dp))
         }
@@ -1133,16 +1143,19 @@ private fun RecordingIndicator() {
     }
 }
 
-/** The (+) button: image attach (vision models) and/or "Scene image" (when a
- *  text-to-image workflow is configured). */
+/** The (+) button: image attach (vision models), "Scene image" (when a text-to-image
+ *  workflow is configured), and "Current message" — the last LLM reply fed verbatim
+ *  into the image model as its prompt, skipping the describe step. */
 @Composable
 private fun AttachButton(
     enabled: Boolean,
     canAttachImage: Boolean,
     sceneImageEnabled: Boolean,
+    currentMessagePrompt: String,
     onPickGallery: () -> Unit,
     onTakePhoto: () -> Unit,
     onSceneImage: () -> Unit,
+    onCurrentMessage: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Box {
@@ -1173,6 +1186,12 @@ private fun AttachButton(
                     text = { Text("Scene image", fontSize = 14.sp, color = DcColors.OnSurface) },
                     leadingIcon = { Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = DcColors.OnSurfaceVariant, modifier = Modifier.size(19.dp)) },
                     onClick = { menuOpen = false; onSceneImage() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Current message", fontSize = 14.sp, color = DcColors.OnSurface) },
+                    leadingIcon = { Icon(Icons.Filled.Message, contentDescription = null, tint = DcColors.OnSurfaceVariant, modifier = Modifier.size(19.dp)) },
+                    enabled = currentMessagePrompt.isNotBlank(),
+                    onClick = { menuOpen = false; onCurrentMessage() },
                 )
             }
         }

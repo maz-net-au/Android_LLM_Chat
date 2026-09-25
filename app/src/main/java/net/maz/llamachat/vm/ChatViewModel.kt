@@ -688,6 +688,34 @@ class ChatViewModel(
         saveThen(updated) { SceneImageService.start(app, convId, messageId, reuse) }
     }
 
+    /** Embed a scene-image placeholder whose prompt is [prompt] itself — sent verbatim
+     *  to ComfyUI with no describe step, so the image model sees exactly this text
+     *  (e.g. a chat message copied straight over). */
+    fun generateSceneFromText(prompt: String) {
+        val conv = base ?: return
+        // Drop the transcript "Name:" prefix — it's bookkeeping for the chat, not part
+        // of what should reach the image model.
+        val trimmed = namePrefix(prompt, conv.characterName).let { prompt.removePrefix(it) }.trim()
+        if (trimmed.isEmpty()) return
+        val messageId = IdGen.next()
+        val placeholder = ChatMessage(
+            id = messageId,
+            role = Role.ASSISTANT,
+            sceneImage = SceneImageMeta(
+                focus = trimmed.take(80),
+                prompt = trimmed,
+                status = SceneImageMeta.STATUS_GENERATING,
+                verbatimPrompt = true,
+            ),
+        )
+        val updated = conv.copy(
+            updatedAt = System.currentTimeMillis(),
+            messages = conv.messages + placeholder,
+        )
+        local.update { it.copy(selectedMsgId = null) }
+        saveThen(updated) { SceneImageService.start(app, convId, messageId, reusePrompt = true) }
+    }
+
     /** Re-run a failed (or stalled) scene-image placeholder in place. Reuses the saved
      *  prompt when one exists (failed during rendering), else re-describes. */
     fun retryScene(messageId: Long) {
