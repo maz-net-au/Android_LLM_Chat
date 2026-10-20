@@ -251,18 +251,21 @@ object ChatRequestBuilder {
             messages = emptyList(),
         )
         val userTurn = buildString {
+            // Name the member in every section heading: a small model reading a whole
+            // multi-character transcript otherwise tends to summarize everyone.
             val persona = conv.character.resolvedContext(conv.userName)
             if (persona.isNotBlank()) {
+                appendLine("## ${member.name}'s persona")
                 appendLine(persona)
                 appendLine()
             }
             if (member.context.isNotBlank()) {
-                appendLine("## ${member.name}")
+                appendLine("## ${member.name}'s background")
                 appendLine(member.context)
                 appendLine()
             }
             conv.summary.takeIf { it.isNotBlank() }?.let {
-                appendLine("## Story so far")
+                appendLine("## Story so far (context only — do not summarize it)")
                 appendLine(it)
                 appendLine()
             }
@@ -272,12 +275,12 @@ object ChatRequestBuilder {
                 appendLine(it)
                 appendLine()
             }
-            appendLine("## Recent messages")
+            appendLine(CastConfig.messagesLabel(member.name))
             conv.messages.forEach { m ->
                 if (!m.locked && !m.isSceneImage && m.text.isNotBlank()) appendLine(stripThink(m.text))
             }
             appendLine()
-            append(CastConfig.INSTRUCTION)
+            append(CastConfig.instruction(member.name))
         }
         val model = s.summaryModel.ifEmpty { conv.model.ifEmpty { s.currentModel } }
         val parts = if (member.refImage != null && ModelCapabilities.supportsImages(model))
@@ -287,7 +290,7 @@ object ChatRequestBuilder {
         val preset = SummarizationConfig.sampling
         return ChatRequest(
             model = model,
-            messages = listOf(apiText("system", CastConfig.SYSTEM_PROMPT), userMessage),
+            messages = listOf(apiText("system", CastConfig.systemPrompt(member.name)), userMessage),
             stream = true,
             stop = null,
             maxTokens = CastConfig.MAX_STATE_TOKENS,
