@@ -12,6 +12,7 @@ import net.maz.llamachat.LlamaChatApp
 import net.maz.llamachat.data.ConversationRepository
 import net.maz.llamachat.data.IdGen
 import net.maz.llamachat.data.SettingsRepository
+import net.maz.llamachat.data.gen.ChatRequestBuilder
 import net.maz.llamachat.data.model.Catalog
 import net.maz.llamachat.data.model.ChatMessage
 import net.maz.llamachat.data.model.Conversation
@@ -32,6 +33,8 @@ data class NewConvUiState(
     val userName: String = "user",
     /** Raw text per overridden sampling param; absent/blank = inherit from [preset]. */
     val samplingText: Map<SamplingParam, String> = emptyMap(),
+    /** Raw text of the media limit; blank = default (3). Parsed on save. */
+    val mediaLimitText: String = "",
     /** The conversation's running summary (edit mode only); sent as context for replies. */
     val summary: String = "",
     val openMenu: NewMenu = NewMenu.NONE,
@@ -63,6 +66,7 @@ class NewConversationViewModel(
                             model = c.model.ifEmpty { current.currentModel },
                             userName = c.userName,
                             samplingText = samplingTextFrom(c.sampling),
+                            mediaLimitText = if (c.mediaLimit == ChatRequestBuilder.DEFAULT_MEDIA_LIMIT) "" else c.mediaLimit.toString(),
                             summary = c.summary,
                         )
                     }
@@ -81,6 +85,7 @@ class NewConversationViewModel(
 
     fun setTitle(v: String) = _state.update { it.copy(title = v) }
     fun setUserName(v: String) = _state.update { it.copy(userName = v) }
+    fun setMediaLimit(v: String) = _state.update { it.copy(mediaLimitText = v) }
     fun setSummary(v: String) = _state.update { it.copy(summary = v) }
     fun selectCharacter(name: String) = _state.update { it.copy(character = name, openMenu = NewMenu.NONE) }
     // Switching the preset template starts from a clean slate (the new preset's values).
@@ -105,6 +110,9 @@ class NewConversationViewModel(
         val title = st.title.trim()
         val userName = st.userName.trim().ifEmpty { "user" }
         val sampling = samplingOverridesFrom(st.samplingText)
+        // Blank keeps the default; a parse failure or negative falls back to it too.
+        val mediaLimit = st.mediaLimitText.trim().toIntOrNull()?.coerceAtLeast(0)
+            ?: ChatRequestBuilder.DEFAULT_MEDIA_LIMIT
         viewModelScope.launch {
             // Remember this name, model and preset as the defaults for future conversations.
             settings.setUserName(userName)
@@ -119,6 +127,7 @@ class NewConversationViewModel(
                             model = st.model,
                             userName = userName,
                             sampling = sampling,
+                            mediaLimit = mediaLimit,
                             summary = st.summary,
                             title = title.ifEmpty { existing.title },
                             updatedAt = System.currentTimeMillis(),
@@ -149,6 +158,7 @@ class NewConversationViewModel(
                         updatedAt = now,
                         userName = userName,
                         sampling = sampling,
+                        mediaLimit = mediaLimit,
                         messages = seed,
                     ),
                 )

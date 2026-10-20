@@ -6,6 +6,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
 import net.maz.llamachat.data.attach.AttachmentStore
+import net.maz.llamachat.data.gen.ChatRequestBuilder
 import net.maz.llamachat.data.model.ChatMessage
 import net.maz.llamachat.data.model.Conversation
 import net.maz.llamachat.data.model.SamplingOverrides
@@ -64,6 +65,8 @@ data class BackupConversation(
     val userName: String = "user",
     val sampling: SamplingOverrides = SamplingOverrides(),
     val summary: String = "",
+    /** How many newest attached messages send their media as content parts; 0 = unlimited. */
+    val mediaLimit: Int = ChatRequestBuilder.DEFAULT_MEDIA_LIMIT,
     val messages: List<ChatMessage> = emptyList(),
     /** Full backup: raw attachment bytes, base64-keyed by [net.maz.llamachat.data.model.Attachment.fileName]
      *  (unique within a conversation). Empty for text-only/legacy files, in which case the
@@ -87,6 +90,7 @@ data class BackupConversation(
         userName = userName,
         sampling = sampling,
         summary = summary,
+        mediaLimit = mediaLimit,
         messages = messages,
     )
 
@@ -105,6 +109,7 @@ data class BackupConversation(
             userName = c.userName,
             sampling = c.sampling,
             summary = c.summary,
+            mediaLimit = c.mediaLimit,
             // Keep the attachment metadata; its bytes are streamed in by encodeTo.
             messages = c.messages,
         )

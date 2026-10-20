@@ -25,6 +25,11 @@ object ChatRequestBuilder {
     /** No-attachment default so text-only callers (and tests) stay unchanged. */
     val NO_ATTACHMENTS: (ChatMessage) -> List<JsonElement> = { emptyList() }
 
+    /** Default [Conversation.mediaLimit]: how many newest attached messages send their
+     *  media as content parts; older ones degrade to a text note. Bounds both the request
+     *  body and the server's vision-token bill on long conversations. 0 = unlimited. */
+    const val DEFAULT_MEDIA_LIMIT = 3
+
     /**
      * Request for generating (or continuing) the assistant message at [assistantIndex].
      * [attachmentPart] resolves a message's attachments to OpenAI content parts
@@ -42,10 +47,18 @@ object ChatRequestBuilder {
     ): ChatRequest {
         val out = ArrayList<ApiMessage>()
         systemMessage(conv)?.let { out += it }
+        // Only the newest [Conversation.mediaLimit] attached messages send their media as
+        // content parts; older ones ride along as a text note, so long conversations don't
+        // keep re-uploading (and re-decoding) every image ever sent. 0 = unlimited.
+        val limit = conv.mediaLimit.coerceAtLeast(0)
+        val mediaFrom = if (limit == 0) Int.MIN_VALUE else
+            conv.messages.indexOfLast { it.attachments.isNotEmpty() }.let { last ->
+                last - limit + 1
+            }
         conv.messages.forEachIndexed { i, m ->
             // Locked messages are represented by the summary in [systemMessage], not resent.
             // Scene images are local-only and never reach the model.
-            if (i < assistantIndex && !m.locked && !m.isSceneImage) out += apiMessage(m, attachmentPart)
+            if (i < assistantIndex && !m.locked && !m.isSceneImage) out += apiMessage(m, i >= mediaFrom, attachmentPart)
         }
         if (includePartial) {
             // Sent verbatim, including any trailing space, so the model continues from
@@ -92,6 +105,10 @@ object ChatRequestBuilder {
         // the "fold the name prefix on" slot, so the real assistant turn gets sent as a
         // completed message and the model instantly predicts EOS — an empty impersonation.
         val last = conv.messages.indexOfLast { !it.isSceneImage }
+        // Same media window as [reply]: only the newest attached messages send their media.
+        val limit = conv.mediaLimit.coerceAtLeast(0)
+        val mediaFrom = if (limit == 0) Int.MIN_VALUE else
+            conv.messages.indexOfLast { it.attachments.isNotEmpty() }.let { l -> l - limit + 1 }
         conv.messages.forEachIndexed { i, m ->
             if (m.locked) return@forEachIndexed // folded into the summary; not resent
             if (m.isSceneImage) return@forEachIndexed // local-only; never sent to the model
@@ -105,7 +122,7 @@ object ChatRequestBuilder {
                 val typed = if (prefill.isBlank()) "" else " " + prefill.trimEnd()
                 out += apiText("assistant", body.trimEnd() + "\n${conv.userName}:$typed")
             } else {
-                out += apiMessage(m, attachmentPart)
+                out += apiMessage(m, i >= mediaFrom, attachmentPart)
             }
         }
         return request(conv, out, s, maxTokens = 1000, ignoreEos = ignoreEos)
@@ -215,12 +232,25 @@ object ChatRequestBuilder {
     /** Text-only messages keep the plain-string content (wire format unchanged);
      *  attachments switch the message to a content-parts array: media first, then
      *  the text part when non-blank. */
-    private fun apiMessage(m: ChatMessage, attachmentPart: (ChatMessage) -> List<JsonElement>): ApiMessage {
+    /**
+     * The OpenAI content parts for [m]'s attachments when [withMedia] is set (the
+     * newest messages in the window), else a single text part naming what's attached.
+     * Media-less turns keep the plain-string wire format via [apiText].
+     */
+    private fun apiMessage(
+        m: ChatMessage,
+        withMedia: Boolean,
+        attachmentPart: (ChatMessage) -> List<JsonElement>,
+    ): ApiMessage {
         val role = if (m.role == Role.USER) "user" else "assistant"
         // Don't resend a prior turn's reasoning: it bloats context and Gemma in
         // particular expects earlier thoughts stripped from the history.
         val text = if (containsThink(m.text)) stripThink(m.text) else m.text
-        val media = if (m.attachments.isEmpty()) emptyList() else attachmentPart(m)
+        if (!withMedia || m.attachments.isEmpty()) {
+            val note = m.attachments.joinToString(", ") { it.fileName }
+            return apiText(role, if (note.isEmpty()) text else "$text\n[$note]")
+        }
+        val media = attachmentPart(m)
         if (media.isEmpty()) return apiText(role, text)
         val textPart = text.takeIf { it.isNotBlank() }
             ?.let { Json.encodeToJsonElement(TextPart(text = it)) }

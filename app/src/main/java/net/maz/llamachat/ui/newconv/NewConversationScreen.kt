@@ -113,6 +113,23 @@ fun NewConversationScreen(
             SectionLabel("PARAMETER PRESET")
             PresetSelector(vm, selectedName = state.preset, samplingText = state.samplingText)
 
+            SectionLabel("ATTACHED IMAGES SENT")
+            Text(
+                "How many of the newest messages with attachments send their media to the model; older ones are sent as a text note instead. 0 = unlimited.",
+                fontSize = 12.sp,
+                color = DcColors.OnSurfaceFaint,
+                modifier = Modifier.padding(bottom = 6.dp),
+            )
+            DcTextField(
+                label = "",
+                value = state.mediaLimitText,
+                onValueChange = vm::setMediaLimit,
+                placeholder = "3",
+                singleLine = true,
+                keyboardType = KeyboardType.Number,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 22.dp),
+            )
+
             // Only existing chats have a summary — it's produced by "Summarize & continue".
             if (state.editing) {
                 Spacer(Modifier.height(22.dp))

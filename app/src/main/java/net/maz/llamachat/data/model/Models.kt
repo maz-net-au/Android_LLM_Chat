@@ -1,6 +1,7 @@
 package net.maz.llamachat.data.model
 
 import kotlinx.serialization.Serializable
+import net.maz.llamachat.data.gen.ChatRequestBuilder
 
 enum class Role { USER, ASSISTANT }
 
@@ -140,6 +141,10 @@ data class Conversation(
      *  so the "/ limit · %" readout also shows on reopen. 0 = unknown. Same derived/
      *  ephemeral status: not part of the backup format. */
     val contextLimit: Int = 0,
+    /** How many newest attached messages send their media as content parts; older
+     *  ones degrade to a text note naming the file. 0 = unlimited (send every one).
+     *  Settable in the chat-details screen. */
+    val mediaLimit: Int = ChatRequestBuilder.DEFAULT_MEDIA_LIMIT,
     val messages: List<ChatMessage> = emptyList(),
 ) {
     companion object {

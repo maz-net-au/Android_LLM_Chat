@@ -21,6 +21,7 @@ import java.io.File
 import java.io.FilterOutputStream
 import java.io.OutputStream
 import java.util.Base64
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Owns the bytes behind [Attachment]s: app-private files under
@@ -30,6 +31,16 @@ import java.util.Base64
 class AttachmentStore(private val context: Context) {
 
     private val json = Json
+
+    /**
+     * Base64 of each attachment file, memoized per (convId, fileName). Every request build
+     * for a long conversation would otherwise re-read and re-encode every attached file —
+     * the allocation churn that OOM-ed. Files are immutable once written (a new import or
+     * copy mints a fresh id), so entries go stale only when the bytes are deleted: [delete]
+     * and [deleteAll] evict theirs, and [toContentPart] re-reads on a cache miss. Bounded
+     * by what's on disk; peak is one base64 string per file (~1.37×), not per send.
+     */
+    private val base64Cache = ConcurrentHashMap<String, String>()
 
     fun dirFor(convId: Long): File =
         File(File(context.filesDir, "attachments"), convId.toString()).apply { mkdirs() }
@@ -124,7 +135,10 @@ class AttachmentStore(private val context: Context) {
 
     /** Delete the files behind [atts] (metadata stays with the message's owner). */
     fun delete(convId: Long, atts: List<Attachment>) {
-        atts.forEach { fileFor(convId, it).delete() }
+        atts.forEach { att ->
+            fileFor(convId, att).delete()
+            base64Cache.remove(cacheKey(convId, att.fileName))
+        }
     }
 
     /** Whether [att]'s backing file exists (its bytes are available to export). */
@@ -160,6 +174,7 @@ class AttachmentStore(private val context: Context) {
     /** Remove every attachment file for a cleared/deleted conversation. */
     fun deleteAll(convId: Long) {
         File(File(context.filesDir, "attachments"), convId.toString()).deleteRecursively()
+        base64Cache.keys.removeIf { it.startsWith("$convId/") }
     }
 
     /**
@@ -170,7 +185,9 @@ class AttachmentStore(private val context: Context) {
     fun toContentPart(convId: Long, att: Attachment): JsonElement? {
         val file = fileFor(convId, att)
         if (!file.exists()) return null
-        val b64 = Base64.getEncoder().encodeToString(file.readBytes())
+        val b64 = base64Cache.computeIfAbsent(cacheKey(convId, att.fileName)) {
+            Base64.getEncoder().encodeToString(file.readBytes())
+        }
         return when (att.kind) {
             Attachment.KIND_IMAGE -> {
                 val mime = att.mimeType.ifEmpty { "image/jpeg" }
@@ -191,6 +208,8 @@ class AttachmentStore(private val context: Context) {
         override fun write(b: ByteArray, off: Int, len: Int) = out.write(b, off, len)
         override fun close() = flush()
     }
+
+    private fun cacheKey(convId: Long, fileName: String) = "$convId/$fileName"
 
     private companion object {
         const val MAX_DIMENSION_PX = 1024
