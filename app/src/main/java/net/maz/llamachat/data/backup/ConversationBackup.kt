@@ -7,6 +7,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
 import net.maz.llamachat.data.attach.AttachmentStore
 import net.maz.llamachat.data.gen.ChatRequestBuilder
+import net.maz.llamachat.data.model.CastMember
 import net.maz.llamachat.data.model.ChatMessage
 import net.maz.llamachat.data.model.Conversation
 import net.maz.llamachat.data.model.SamplingOverrides
@@ -67,6 +68,9 @@ data class BackupConversation(
     val summary: String = "",
     /** How many newest attached messages send their media as content parts; 0 = unlimited. */
     val mediaLimit: Int = ChatRequestBuilder.DEFAULT_MEDIA_LIMIT,
+    /** The conversation's cast (non-primary characters). Ref-image bytes ride in
+     *  [attachmentBytes] like message attachments, keyed by fileName. */
+    val cast: List<CastMember> = emptyList(),
     val messages: List<ChatMessage> = emptyList(),
     /** Full backup: raw attachment bytes, base64-keyed by [net.maz.llamachat.data.model.Attachment.fileName]
      *  (unique within a conversation). Empty for text-only/legacy files, in which case the
@@ -91,6 +95,7 @@ data class BackupConversation(
         sampling = sampling,
         summary = summary,
         mediaLimit = mediaLimit,
+        cast = cast,
         messages = messages,
     )
 
@@ -110,6 +115,7 @@ data class BackupConversation(
             sampling = c.sampling,
             summary = c.summary,
             mediaLimit = c.mediaLimit,
+            cast = c.cast,
             // Keep the attachment metadata; its bytes are streamed in by encodeTo.
             messages = c.messages,
         )
@@ -155,18 +161,19 @@ object BackupCodec {
 
         val seen = HashSet<String>()
         var first = true
-        for (m in conv.messages) {
-            for (att in m.attachments) {
-                if (!store.hasFile(conv.id, att) || !seen.add(att.fileName)) continue
-                sink.write((if (first) "\n" else ",\n").encodeToByteArray())
-                first = false
-                // Reuse the serializer for the key so the file name is correctly quoted.
-                sink.write(json.encodeToString(att.fileName).encodeToByteArray())
-                sink.write(": \"".encodeToByteArray())
-                store.streamBase64Into(conv.id, att, sink)
-                sink.write("\"".encodeToByteArray())
-            }
+        fun streamOne(att: net.maz.llamachat.data.model.Attachment) {
+            if (!store.hasFile(conv.id, att) || !seen.add(att.fileName)) return
+            sink.write((if (first) "\n" else ",\n").encodeToByteArray())
+            first = false
+            // Reuse the serializer for the key so the file name is correctly quoted.
+            sink.write(json.encodeToString(att.fileName).encodeToByteArray())
+            sink.write(": \"".encodeToByteArray())
+            store.streamBase64Into(conv.id, att, sink)
+            sink.write("\"".encodeToByteArray())
         }
+        for (m in conv.messages) m.attachments.forEach(::streamOne)
+        // Cast reference images live in the same attachment dir — inline their bytes too.
+        for (member in conv.cast) member.refImage?.let(::streamOne)
         if (!first) sink.write("\n".encodeToByteArray())
         sink.write(skeleton.substring(close).encodeToByteArray())
         sink.flush()

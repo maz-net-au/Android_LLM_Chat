@@ -20,6 +20,7 @@ import net.maz.llamachat.data.model.Conversation
 import net.maz.llamachat.ui.characters.CharacterEditScreen
 import net.maz.llamachat.ui.characters.CharacterListScreen
 import net.maz.llamachat.ui.characters.GeneratorScreen
+import net.maz.llamachat.ui.chat.CastScreen
 import net.maz.llamachat.ui.chat.ChatScreen
 import net.maz.llamachat.ui.chat.SceneImageViewerScreen
 import net.maz.llamachat.ui.gallery.GalleryScreen
@@ -57,7 +58,9 @@ object Routes {
     const val QUEUE = "queue"
     const val VIEWER = "viewer"
     const val SCENE_IMAGE = "scene_image"
+    const val CAST = "cast"
     fun chat(id: Long) = "$CHAT/$id"
+    fun cast(convId: Long) = "$CAST/$convId"
     fun sceneImage(convId: Long, messageId: Long) = "$SCENE_IMAGE/$convId/$messageId"
     fun newConv(editId: Long? = null) = if (editId == null) NEW else "$NEW?convId=$editId"
     fun editCharacter(name: String? = null) =
@@ -304,6 +307,19 @@ fun LlamaChatNavHost() {
                 onOpenSceneImage = { messageId ->
                     navController.navigate(Routes.sceneImage(convId, messageId))
                 },
+                onManageCast = { id -> navController.navigate(Routes.cast(id)) },
+            )
+        }
+
+        composable(
+            route = "${Routes.CAST}/{convId}",
+            arguments = listOf(navArgument("convId") { type = NavType.LongType }),
+        ) { backStackEntry ->
+            val convId = backStackEntry.arguments?.getLong("convId") ?: return@composable
+            val vm: ChatViewModel = viewModel(factory = ChatViewModel.factory(app, convId))
+            CastScreen(
+                vm = vm,
+                onBack = { navController.popBackStack() },
             )
         }
 

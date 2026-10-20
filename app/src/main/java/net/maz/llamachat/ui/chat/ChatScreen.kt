@@ -20,6 +20,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +40,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -75,6 +77,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
+import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -131,6 +134,7 @@ fun ChatScreen(
     vm: ChatViewModel,
     onBack: () -> Unit,
     onEditDetails: (Long) -> Unit,
+    onManageCast: (Long) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenSceneImage: (Long) -> Unit = {},
 ) {
@@ -248,8 +252,9 @@ fun ChatScreen(
 
     val character = conv?.character
     val messages = conv?.messages ?: emptyList()
-    val userName = conv?.userName ?: "You"
-    val characterName = conv?.characterName ?: ""
+    // Every speaker name in this conversation (user + primary + cast) — used to strip
+    // the leading "Name:" from bubble text and edited text.
+    val names = remember(conv) { if (conv != null) vm.speakerNames(conv) else emptyList() }
     val firstUnlockedIndex = messages.indexOfFirst { !it.locked }
     // Scene images are local-only placeholders, not part of the transcript — the reply
     // actions (Regenerate/Impersonate) target the last *real* assistant message.
@@ -264,6 +269,9 @@ fun ChatScreen(
     // which appends a fresh assistant turn and generates a reply for it.
     val lastIsUser = lastRealRole == Role.USER
     val showActions = state.streaming || lastIsAssistant || lastIsUser
+
+    // Summarize mode picker: story only, or story + per-character state updates.
+    var summarizeDialog by remember { mutableStateOf(false) }
 
     // Focus prompt for a new scene image.
     var sceneFocus by rememberSaveable { mutableStateOf<String?>(null) }
@@ -295,6 +303,15 @@ fun ChatScreen(
         } else {
             vm.saveSceneImage(messageId, ::toastSaveResult)
         }
+    }
+
+    if (summarizeDialog) {
+        SummarizeModeDialog(
+            includeCharactersEnabled = !conv?.cast.isNullOrEmpty(),
+            onDismiss = { summarizeDialog = false },
+            onStoryOnly = { summarizeDialog = false; vm.summarize(includeCharacters = false) },
+            onStoryAndCharacters = { summarizeDialog = false; vm.summarize(includeCharacters = true) },
+        )
     }
 
     // The scene image whose "Edit description" was picked from its long-press menu;
@@ -350,8 +367,9 @@ fun ChatScreen(
             menuItems = buildList {
                 if (!quickImage) {
                     add(AppBarMenuItem(Icons.Filled.EditNote, "Edit chat details", DcColors.OnSurfaceVariant, DcColors.OnSurface) { conv?.let { onEditDetails(it.id) } })
+                    add(AppBarMenuItem(Icons.Filled.Person, "Manage characters", DcColors.OnSurfaceVariant, DcColors.OnSurface) { conv?.let { onManageCast(it.id) } })
                     if (state.canSummarize) {
-                        add(AppBarMenuItem(Icons.Filled.Compress, "Summarize & continue", DcColors.OnSurfaceVariant, DcColors.OnSurface, vm::summarize))
+                        add(AppBarMenuItem(Icons.Filled.Compress, "Summarize & continue", DcColors.OnSurfaceVariant, DcColors.OnSurface) { summarizeDialog = true })
                     }
                 }
                 add(AppBarMenuItem(Icons.Filled.FileDownload, "Export conversation", DcColors.OnSurfaceVariant, DcColors.OnSurface) {
@@ -407,8 +425,7 @@ fun ChatScreen(
                         MessageItem(
                             message = message,
                             attachmentFiles = message.attachments.map { it to app.attachmentStore.fileFor(vm.convId, it) },
-                            userName = userName,
-                            characterName = characterName,
+                            names = names,
                             locked = message.locked,
                             editing = state.editingMsgId == message.id,
                             selected = state.selectedMsgId == message.id,
@@ -419,7 +436,7 @@ fun ChatScreen(
                             onCopy = {
                                 // Copy what the bubble shows: no "Name:" prefix, and no
                                 // <think> reasoning on assistant replies — just the answer.
-                                val shown = message.displayText(userName, characterName)
+                                val shown = message.displayText(names)
                                 val text = if (message.role == Role.ASSISTANT) parseThink(shown).answer else shown
                                 clipboard.setText(AnnotatedString(text))
                                 // Android 13+ shows its own clipboard confirmation overlay.
@@ -465,8 +482,22 @@ fun ChatScreen(
             )
         }
 
+        if (state.showSpeakerPicker && conv != null) {
+            SpeakerPicker(
+                names = vm.speakerNames(conv).filterNot { it == conv.userName },
+                selected = state.speaker,
+                onSelect = vm::setSpeaker,
+            )
+        }
+
         if (state.summarizing) {
             SummarizingBanner(progress = state.summaryProgress, onCancel = vm::stop)
+        } else if (state.updatingCastName != null) {
+            val updatingName = state.updatingCastName!!
+            CastUpdatingBanner(
+                name = updatingName,
+                pendingCount = state.castSummariesPending.size,
+            )
         }
 
         ContextMeter(tokenCount = state.tokenCount, contextLimit = state.contextLimit)
@@ -594,24 +625,131 @@ private fun SummarizingBanner(progress: String, onCancel: () -> Unit) {
     }
 }
 
+/** Which cast member speaks the next turn. "Auto" (no selection) lets the model
+ *  choose from the "## Characters" section; picking a name prefills that voice. */
+@Composable
+private fun SpeakerPicker(names: List<String>, selected: String?, onSelect: (String?) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        SpeakerChip("Auto", selected == null, onClick = { onSelect(null) })
+        names.forEach { name ->
+            SpeakerChip(name, selected == name, onClick = { onSelect(name) })
+        }
+    }
+}
+
+@Composable
+private fun SpeakerChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = if (selected) DcColors.PrimaryContainer else DcColors.SurfaceTint,
+        contentColor = if (selected) DcColors.OnSurface else DcColors.OnSurfaceMedium,
+        onClick = onClick,
+    ) {
+        Text(label, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp))
+    }
+}
+
+/** Shown while a per-character state update streams (from the cast screen's button or
+ *  the "Story + characters" summarize mode). Non-cancellable: it runs in the ViewModel,
+ *  independent of the single-flight generation service. */
+@Composable
+fun CastUpdatingBanner(name: String, pendingCount: Int) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .background(DcColors.PrimaryContainer, RoundedCornerShape(10.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircularProgressIndicator(color = DcColors.Primary, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(
+            "Updating $name${if (pendingCount > 0) " ($pendingCount more)" else ""}…",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = DcColors.OnSurface,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+/** "Summarize & continue" mode choice: the story summary always runs; "Story +
+ *  characters" additionally rewrites each cast member's state in its own request. */
+@Composable
+private fun SummarizeModeDialog(
+    includeCharactersEnabled: Boolean,
+    onDismiss: () -> Unit,
+    onStoryOnly: () -> Unit,
+    onStoryAndCharacters: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Summarize & continue") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                ChoiceRow(
+                    label = "Story only",
+                    detail = "Compacts the older messages into the story summary.",
+                    enabled = true,
+                    onClick = onStoryOnly,
+                )
+                ChoiceRow(
+                    label = "Story + characters",
+                    detail = "Also updates each character's state with its own request.",
+                    enabled = includeCharactersEnabled,
+                    onClick = onStoryAndCharacters,
+                )
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun ChoiceRow(label: String, detail: String, enabled: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(label, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = DcColors.OnSurface.copy(alpha = if (enabled) 1f else 0.4f))
+            Text(detail, fontSize = 12.sp, color = DcColors.OnSurfaceMedium.copy(alpha = if (enabled) 1f else 0.5f))
+        }
+    }
+}
+
 /**
  * The text shown in a bubble: the stored text minus the leading "Name:" speaker
  * prefix. Display-only — the stored message keeps the prefix so future API turns
  * still carry it.
  */
-private fun ChatMessage.displayText(userName: String, characterName: String): String {
+private fun ChatMessage.displayText(names: List<String>): String {
     // Strip "Name:" with or without its trailing space — a model (or server) may emit
     // an emote straight after the colon ("Name:*waves*"), matching namePrefix in the VM.
-    val name = if (role == Role.USER) userName else characterName
-    return text.removePrefix("$name: ").removePrefix("$name:")
+    // Multi-character chats: try every known speaker, first match wins.
+    for (name in names) {
+        val spaced = "$name: "
+        if (text.startsWith(spaced)) return text.removePrefix(spaced)
+        val bare = "$name:"
+        if (text.startsWith(bare)) return text.removePrefix(bare)
+    }
+    return text
 }
 
 @Composable
 private fun MessageItem(
     message: ChatMessage,
     attachmentFiles: List<Pair<Attachment, File>>,
-    userName: String,
-    characterName: String,
+    names: List<String>,
     locked: Boolean,
     editing: Boolean,
     selected: Boolean,
@@ -645,7 +783,7 @@ private fun MessageItem(
             if (editing) {
                 EditBox(editText, onEditTextChange, onSaveEdit, onCancelEdit)
             } else {
-                MessageBubble(message.displayText(userName, characterName), attachmentFiles, isUser, streamingCaret, onTap)
+                MessageBubble(message.displayText(names), attachmentFiles, isUser, streamingCaret, onTap)
                 if (!isUser && message.variantCount > 1) {
                     VariantNav(message, onPrevVariant, onNextVariant)
                 }

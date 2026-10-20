@@ -4,8 +4,10 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import net.maz.llamachat.data.SettingsRepository
+import net.maz.llamachat.data.model.CastMember
 import net.maz.llamachat.data.model.ChatMessage
 import net.maz.llamachat.data.model.Conversation
+import net.maz.llamachat.data.model.ModelCapabilities
 import net.maz.llamachat.data.model.Role
 import net.maz.llamachat.data.net.ApiMessage
 import net.maz.llamachat.data.net.ChatRequest
@@ -44,6 +46,10 @@ object ChatRequestBuilder {
         s: SettingsRepository.Settings,
         ignoreEos: Boolean = false,
         attachmentPart: (ChatMessage) -> List<JsonElement> = NO_ATTACHMENTS,
+        /** Multi-character chats: which cast member speaks this turn. When set and the
+         *  target turn is still empty, it prefills "Name: " so the model stays in that
+         *  character; null/blank lets the model choose (auto mode). */
+        speaker: String? = null,
     ): ChatRequest {
         val out = ArrayList<ApiMessage>()
         systemMessage(conv)?.let { out += it }
@@ -64,7 +70,13 @@ object ChatRequestBuilder {
             // Sent verbatim, including any trailing space, so the model continues from
             // exactly where the text left off rather than fusing onto the last word.
             val partial = conv.messages.getOrNull(assistantIndex)?.text.orEmpty()
-            if (partial.isNotBlank()) out += apiText("assistant", partial)
+            when {
+                partial.isNotBlank() -> out += apiText("assistant", partial)
+                // Auto mode in a multi-character chat: no prefix — the system prompt's
+                // "## Characters" section is what makes the model pick a speaker.
+                speaker.isNullOrBlank() -> {}
+                else -> out += apiText("assistant", "$speaker: ")
+            }
         }
         return request(
             conv = conv,
@@ -218,12 +230,112 @@ object ChatRequestBuilder {
         )
     }
 
-    /** The system persona plus, when present, the running summary of older messages. */
+    /**
+     * Build the request that rewrites ONE cast member's state notes from the conversation
+     * so far — an independent request per character (the "Update with LLM" button, and the
+     * per-character half of "Summarize → Story + characters"). The story summary is never
+     * touched; only this member's [CastMember.state] is written on success.
+     *
+     * When the member has a reference image and the model is vision-capable, the user turn
+     * becomes content parts (image first) so the model can fold appearance/attire into the
+     * state; [refImagePart] resolves the bytes (a lambda so this object stays file-free).
+     */
+    fun castStateUpdate(
+        conv: Conversation,
+        name: String,
+        s: SettingsRepository.Settings,
+        refImagePart: (CastMember) -> List<JsonElement> = { emptyList() },
+    ): ChatRequest {
+        val member = conv.cast.firstOrNull { it.name == name } ?: return ChatRequest(
+            model = s.summaryModel.ifEmpty { conv.model.ifEmpty { s.currentModel } },
+            messages = emptyList(),
+        )
+        val userTurn = buildString {
+            val persona = conv.character.resolvedContext(conv.userName)
+            if (persona.isNotBlank()) {
+                appendLine(persona)
+                appendLine()
+            }
+            if (member.context.isNotBlank()) {
+                appendLine("## ${member.name}")
+                appendLine(member.context)
+                appendLine()
+            }
+            conv.summary.takeIf { it.isNotBlank() }?.let {
+                appendLine("## Story so far")
+                appendLine(it)
+                appendLine()
+            }
+            member.state.takeIf { it.isNotBlank() }?.let {
+                appendLine("## ${member.name}'s state")
+                appendLine(CastConfig.PREVIOUS_STATE_LABEL)
+                appendLine(it)
+                appendLine()
+            }
+            appendLine("## Recent messages")
+            conv.messages.forEach { m ->
+                if (!m.locked && !m.isSceneImage && m.text.isNotBlank()) appendLine(stripThink(m.text))
+            }
+            appendLine()
+            append(CastConfig.INSTRUCTION)
+        }
+        val model = s.summaryModel.ifEmpty { conv.model.ifEmpty { s.currentModel } }
+        val parts = if (member.refImage != null && ModelCapabilities.supportsImages(model))
+            refImagePart(member) else emptyList()
+        val userMessage = if (parts.isEmpty()) apiText("user", userTurn)
+        else apiParts("user", parts + listOf(Json.encodeToJsonElement(TextPart(text = userTurn + CastConfig.REF_IMAGE_NOTE))))
+        val preset = SummarizationConfig.sampling
+        return ChatRequest(
+            model = model,
+            messages = listOf(apiText("system", CastConfig.SYSTEM_PROMPT), userMessage),
+            stream = true,
+            stop = null,
+            maxTokens = CastConfig.MAX_STATE_TOKENS,
+            temperature = preset.temperature,
+            topP = preset.topP,
+            topK = preset.topK,
+            repeatPenalty = preset.repeatPenalty,
+        )
+    }
+
+    /** The system persona plus, when present, the running summary of older messages and
+     *  the cast's per-character notes. */
     private fun systemContent(conv: Conversation): String {
         val context = conv.character.resolvedContext(conv.userName)
         val summary = conv.summary.takeIf { it.isNotBlank() }
             ?.let { "## Story so far\n$it" }
-        return listOfNotNull(context.takeIf { it.isNotBlank() }, summary).joinToString("\n\n")
+        return listOfNotNull(context.takeIf { it.isNotBlank() }, summary, castSection(conv))
+            .joinToString("\n\n")
+    }
+
+    /**
+     * The "## Characters" section for multi-character chats: each cast member's persona
+     * (when set) and current state, so the model knows who is around and what has
+     * happened to them. When more than one character can speak, it also gets the rule
+     * that any of them may take a turn — that's what makes auto-speaker mode work.
+     */
+    private fun castSection(conv: Conversation): String? {
+        val members = conv.cast.filter { it.context.isNotBlank() || it.state.isNotBlank() }
+        if (members.isEmpty()) return null
+        val usesPrefixes = conv.character.usesNamePrefixes
+        val canSpeak = members.size + 1 > 1 && usesPrefixes // +1: the primary character
+        val body = buildString {
+            appendLine("## Characters")
+            if (canSpeak) {
+                appendLine(
+                    "Any of these characters may speak. Start every turn with the speaker's " +
+                        "name followed by a colon (\"Name:\").",
+                )
+                appendLine()
+            }
+            members.forEach { m ->
+                appendLine("### ${m.name}")
+                if (m.context.isNotBlank()) appendLine(m.context)
+                if (m.state.isNotBlank()) appendLine("Current state: ${m.state}")
+                appendLine()
+            }
+        }.trimEnd()
+        return body
     }
 
     private fun systemMessage(conv: Conversation): ApiMessage? =
@@ -269,8 +381,15 @@ object ChatRequestBuilder {
             model = conv.model.ifEmpty { s.currentModel },
             messages = messages,
             stream = true,
-            stop = if (conv.character.usesNamePrefixes)
-                listOf("${conv.userName}:", "${conv.characterName}:") else null,
+            stop = if (conv.character.usesNamePrefixes) {
+                // User + primary + every cast member: generation halts at whichever name
+                // is next to speak in a multi-character transcript.
+                buildList {
+                    add("${conv.userName}:")
+                    add("${conv.characterName}:")
+                    conv.cast.forEach { add("${it.name}:") }
+                }.distinct()
+            } else null,
             maxTokens = maxTokens,
             ignoreEos = ignoreEos,
             temperature = preset.temperature,

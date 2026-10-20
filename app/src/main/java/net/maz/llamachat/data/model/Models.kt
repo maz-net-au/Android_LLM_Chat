@@ -92,6 +92,10 @@ data class ChatMessage(
     /** Non-null marks this as a scene-image message: shown but never sent to the model.
      *  Default keeps old blobs decoding. */
     val sceneImage: SceneImageMeta? = null,
+    /** For assistant turns in multi-character chats: which cast member spoke. Empty =
+     *  the primary character (or legacy single-character messages). The stored text
+     *  still carries the "Name:" prefix; this records who it was for display/editing. */
+    val speaker: String = "",
 ) {
     val text: String get() = variants.getOrElse(activeVariant) { "" }
     val variantCount: Int get() = variants.size
@@ -111,9 +115,32 @@ data class ChatMessage(
     companion object {
         fun user(id: Long, text: String, attachments: List<Attachment> = emptyList()) =
             ChatMessage(id, Role.USER, listOf(text), 0, attachments = attachments)
-        fun assistant(id: Long, text: String = "") = ChatMessage(id, Role.ASSISTANT, listOf(text), 0)
+        fun assistant(id: Long, text: String = "", speaker: String = "") =
+            ChatMessage(id, Role.ASSISTANT, listOf(text), 0, speaker = speaker)
     }
 }
+
+/**
+ * A non-primary character in a [Conversation]'s cast. Self-contained: the persona
+ * ([context]) lives on this member rather than in the shared character library, so a
+ * conversation can carry characters that were never exported anywhere. The primary
+ * character is NOT stored here — it stays referenced by [Conversation.characterName].
+ *
+ * ⚠️ Serialized into the Room blob (ConversationEntity.castJson) AND the backup file
+ * format — same rules as [ChatMessage]: add fields only with defaults; never
+ * rename/remove/retype.
+ */
+@Serializable
+data class CastMember(
+    val name: String,
+    /** Self-contained persona (system-prompt text); blank = none. */
+    val context: String = "",
+    /** Per-character state summary (relationships, injuries, possessions…). Editable. */
+    val state: String = "",
+    /** Reference image for LLM state updates; null = none. Bytes live in the
+     *  conversation's attachment dir like message attachments (see AttachmentStore). */
+    val refImage: Attachment? = null,
+)
 
 /** A conversation and its messages. Mirrors the prototype's conversation object. */
 data class Conversation(
@@ -145,6 +172,11 @@ data class Conversation(
      *  ones degrade to a text note naming the file. 0 = unlimited (send every one).
      *  Settable in the chat-details screen. */
     val mediaLimit: Int = ChatRequestBuilder.DEFAULT_MEDIA_LIMIT,
+    /** Non-primary characters in this conversation. Self-contained per conversation —
+     *  persona text lives here, not in the shared character library (export/import is
+     *  explicit only). The primary [characterName] resolves from the catalog as before;
+     *  its per-conversation state is stored as a member whose name equals it. */
+    val cast: List<CastMember> = emptyList(),
     val messages: List<ChatMessage> = emptyList(),
 ) {
     companion object {

@@ -68,6 +68,12 @@ class HomeViewModel(
                             app.attachmentStore.writeBase64(conv.id, att, b64)
                         }
                     }
+                    // Cast reference images ride in the same map.
+                    conv.cast.asSequence().mapNotNull { it.refImage }.forEach { att ->
+                        parsed.attachmentBytes[att.fileName]?.let { b64 ->
+                            app.attachmentStore.writeBase64(conv.id, att, b64)
+                        }
+                    }
                 }
             }
             val missing = conv.characterName.takeIf { name ->

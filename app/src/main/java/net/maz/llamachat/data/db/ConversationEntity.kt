@@ -4,6 +4,7 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import net.maz.llamachat.data.model.CastMember
 import net.maz.llamachat.data.model.ChatMessage
 import net.maz.llamachat.data.model.Conversation
 import net.maz.llamachat.data.model.SamplingOverrides
@@ -35,6 +36,7 @@ data class ConversationEntity(
     val summary: String = "",
     val tokenCount: Int = 0,
     val contextLimit: Int = 0,
+    val castJson: String = "[]",
     val messagesJson: String,
 ) {
     fun toDomain(): Conversation = Conversation(
@@ -52,6 +54,9 @@ data class ConversationEntity(
         summary = summary,
         tokenCount = tokenCount,
         contextLimit = contextLimit,
+        cast = runCatching {
+            json.decodeFromString<List<CastMember>>(castJson)
+        }.getOrDefault(emptyList()),
         messages = runCatching {
             json.decodeFromString<List<ChatMessage>>(messagesJson)
         }.getOrDefault(emptyList()),
@@ -71,6 +76,7 @@ data class ConversationEntity(
             summary = c.summary,
             tokenCount = c.tokenCount,
             contextLimit = c.contextLimit,
+            castJson = json.encodeToString(c.cast),
             messagesJson = json.encodeToString(c.messages),
         )
     }

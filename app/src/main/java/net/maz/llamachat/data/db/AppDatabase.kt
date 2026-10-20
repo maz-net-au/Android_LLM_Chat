@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [ConversationEntity::class, GalleryItemEntity::class],
-    version = 8,
+    version = 9,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -80,6 +80,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v9 adds the per-conversation cast (non-primary characters) as a JSON blob. */
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE conversations ADD COLUMN castJson TEXT NOT NULL DEFAULT '[]'")
+            }
+        }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -91,7 +98,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "llamachat.db",
                 ).addMigrations(
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
-                    MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
+                    MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
                 ).build().also { instance = it }
             }
     }

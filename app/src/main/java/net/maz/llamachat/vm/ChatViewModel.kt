@@ -38,6 +38,7 @@ import net.maz.llamachat.data.gen.SummaryPhase
 import net.maz.llamachat.data.gen.containsThink
 import net.maz.llamachat.data.gen.stripThink
 import net.maz.llamachat.data.model.Attachment
+import net.maz.llamachat.data.model.CastMember
 import net.maz.llamachat.data.model.ChatMessage
 import net.maz.llamachat.data.model.Conversation
 import net.maz.llamachat.data.model.ModelCapabilities
@@ -87,6 +88,15 @@ data class ChatUiState(
     val sceneJobPhases: Map<Long, ComfyJobStatus> = emptyMap(),
     /** Scene-image placeholders whose LLM describe step is running right now. */
     val describingSceneIds: Set<Long> = emptySet(),
+    /** Multi-character chats: the cast member picked to speak next; null = Auto (the
+     *  model chooses from context). Only meaningful when [showSpeakerPicker]. */
+    val speaker: String? = null,
+    /** True when a speaker picker should show: transcript mode with 2+ characters. */
+    val showSpeakerPicker: Boolean = false,
+    /** Cast member whose LLM state update is streaming right now (one at a time). */
+    val updatingCastName: String? = null,
+    /** Names queued for per-character state updates after a "Story + characters" summarize. */
+    val castSummariesPending: List<String> = emptyList(),
 )
 
 /**
@@ -120,9 +130,19 @@ class ChatViewModel(
         val summarizeDoneId: Long? = null,
         val pendingImage: Attachment? = null,
         val recording: Boolean = false,
+        /** Cast member picked to speak next; null = Auto. Screen lifetime only. */
+        val speaker: String? = null,
+    )
+
+    /** Per-character state updates in flight (button tap or post-summarize queue). */
+    private data class CastUpdate(
+        val name: String,
+        /** Names still waiting behind the one currently streaming. */
+        val pending: List<String> = emptyList(),
     )
 
     private val local = MutableStateFlow(Local())
+    private val castUpdate = MutableStateFlow<CastUpdate?>(null)
 
     /** Context usage, refreshed after each generation: the exact token count of the
      *  transcript (`/tokenize`) and the model's window (`/props`). Both null until
@@ -189,6 +209,19 @@ class ChatViewModel(
             state.copy(sceneJobPhases = phases)
         }.combine(app.sceneImages.describing) { state, describing ->
             state.copy(describingSceneIds = describing)
+        }.combine(castUpdate) { state, cu ->
+            val conv2 = state.conversation
+            // The picker shows in transcript mode with more than one character: the
+            // primary plus any cast members (the primary's own state entry, if present,
+            // doesn't add a speaker).
+            val extraSpeakers = conv2?.cast?.map { it.name }
+                ?.filterNot { it == conv2.characterName } ?: emptyList()
+            state.copy(
+                speaker = local.value.speaker,
+                showSpeakerPicker = (conv2?.character?.usesNamePrefixes == true) && extraSpeakers.size >= 1,
+                updatingCastName = cu?.name,
+                castSummariesPending = cu?.pending ?: emptyList(),
+            )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
     init {
@@ -225,6 +258,12 @@ class ChatViewModel(
                         local.update { it.copy(summarizeDoneId = convId) }
                         summarizer.clear(convId)
                         refreshUsage()
+                        // "Story + characters": now that the fresh story summary is in,
+                        // run each cast member's own independent state update.
+                        castSummarizeQueue?.let { queue ->
+                            castSummarizeQueue = null
+                            startCastUpdates(queue)
+                        }
                     }
                     SummaryPhase.FAILED -> summarizer.clear(convId)
                     SummaryPhase.RUNNING -> {}
@@ -276,6 +315,9 @@ class ChatViewModel(
 
     fun setInput(v: String) = local.update { it.copy(input = v) }
 
+    /** Pick which cast member speaks next; null = Auto (the model chooses). */
+    fun setSpeaker(name: String?) = local.update { it.copy(speaker = name) }
+
     fun send() = sendInternal(local.value.input.trim(), listOfNotNull(local.value.pendingImage))
 
     /**
@@ -287,6 +329,9 @@ class ChatViewModel(
         if (isBusy()) return
         val conv = base ?: return
         val prefixes = conv.character.usesNamePrefixes
+        // In a multi-character chat the picker names who speaks; Auto (null) leaves the
+        // turn empty and lets the model choose from the "## Characters" system section.
+        val speaker = if (prefixes) local.value.speaker else null
         val userId = IdGen.next()
         val assistantId = IdGen.next()
         val title = if (conv.title == "New chat" && text.isNotEmpty()) deriveTitle(text) else conv.title
@@ -301,13 +346,23 @@ class ChatViewModel(
                     if (prefixes && text.isNotEmpty()) "${conv.userName}: $text" else text,
                     attachments = attachments,
                 ) +
-                // In transcript mode, prefill the reply with "Character: " so the
-                // model is forced to speak as the character; generation continues it.
-                ChatMessage.assistant(assistantId, if (prefixes) "${conv.characterName}: " else ""),
+                // In transcript mode, prefill the reply with "Name: " so the model is
+                // forced to speak as that character; generation continues it. Auto mode
+                // seeds an empty turn (no prefix) instead.
+                ChatMessage.assistant(
+                    assistantId,
+                    if (prefixes && speaker != null) "$speaker: " else "",
+                    speaker = speaker.orEmpty(),
+                ),
         )
         local.update { it.copy(input = "", selectedMsgId = null, pendingImage = null) }
         saveThen(updated) {
-            GenerationService.start(app, convId, assistantId, includePartial = prefixes, forceContinue = false, title = updated.title)
+            GenerationService.start(
+                app, convId, assistantId,
+                includePartial = prefixes && speaker != null,
+                forceContinue = false, title = updated.title,
+                speaker = speaker.orEmpty(),
+            )
         }
     }
 
@@ -385,31 +440,36 @@ class ChatViewModel(
         if (isBusy()) return
         val conv = base ?: return
         val prefixes = conv.character.usesNamePrefixes
-        val prefill = if (prefixes) "${conv.characterName}: " else ""
+        val speaker = if (prefixes) local.value.speaker else null
+        // Re-rolling a turn that already has a speaker keeps it, so "Regenerate" means
+        // "another take by the same character"; Auto re-rolls stay auto.
         val lastReal = conv.messages.lastOrNull { !it.isSceneImage } ?: return
         if (lastReal.role == Role.USER) {
             // No trailing assistant to revariant: give the dangling user turn a reply.
             val assistantId = IdGen.next()
+            val prefill = if (prefixes && speaker != null) "$speaker: " else ""
             val updated = conv.copy(
                 updatedAt = System.currentTimeMillis(),
-                messages = conv.messages + ChatMessage.assistant(assistantId, prefill),
+                messages = conv.messages + ChatMessage.assistant(assistantId, prefill, speaker = speaker.orEmpty()),
             )
             local.update { it.copy(selectedMsgId = null) }
             saveThen(updated) {
-                GenerationService.start(app, convId, assistantId, includePartial = prefixes, forceContinue = false, title = updated.title, ignoreEos = ignoreEos)
+                GenerationService.start(app, convId, assistantId, includePartial = prefixes && speaker != null, forceContinue = false, title = updated.title, ignoreEos = ignoreEos, speaker = speaker.orEmpty())
             }
             return
         }
         val last = conv.messages.lastOrNull { it.role == Role.ASSISTANT && !it.isSceneImage } ?: return
+        val who = if (prefixes) (last.speaker.ifBlank { conv.characterName }) else ""
+        val prefill = if (prefixes) "$who: " else ""
         val updated = conv.copy(
             updatedAt = System.currentTimeMillis(),
             messages = conv.messages.map {
-                if (it.id == last.id) it.addVariant(prefill) else it
+                if (it.id == last.id) it.addVariant(prefill).copy(speaker = who) else it
             },
         )
         local.update { it.copy(selectedMsgId = null) }
         saveThen(updated) {
-            GenerationService.start(app, convId, last.id, includePartial = prefixes, forceContinue = false, title = updated.title, ignoreEos = ignoreEos)
+            GenerationService.start(app, convId, last.id, includePartial = prefixes, forceContinue = false, title = updated.title, ignoreEos = ignoreEos, speaker = who)
         }
     }
 
@@ -530,27 +590,36 @@ class ChatViewModel(
         if (m.locked || m.isSceneImage) return // summarized messages are frozen; scene images aren't text
         // Edit the visible answer: drop any reasoning block (e.g. Gemma's thought
         // channel) so it isn't shown — or re-saved — then strip the "Name:" prefix,
-        // remembering the exact prefix to re-apply on save.
+        // remembering the exact prefix to re-apply on save. In multi-character chats
+        // the assistant's speaker may be any cast member, so try every known name.
         val body = if (containsThink(m.text)) stripThink(m.text) else m.text
-        val name = if (m.role == Role.USER) conv.userName else conv.characterName
-        val editPrefix = namePrefix(body, name)
+        val names = if (m.role == Role.USER) listOf(conv.userName) else speakerNames(conv)
+        val editPrefix = names.firstNotNullOfOrNull { namePrefix(body, it) } ?: ""
         local.update {
             it.copy(editingMsgId = id, editText = body.removePrefix(editPrefix), editPrefix = editPrefix, selectedMsgId = null)
         }
     }
 
+    /** Every speaker name in this conversation: the user plus the primary character and
+     *  each cast member (deduped). Used to find/strip transcript "Name:" prefixes. */
+    fun speakerNames(conv: Conversation): List<String> = buildList {
+        add(conv.userName)
+        add(conv.characterName)
+        conv.cast.forEach { add(it.name) }
+    }.distinct()
+
     /**
      * The transcript "Name:" prefix present on [text], including its trailing space
      * when there is one — but an emote that follows the colon directly (e.g.
      * "Name:*waves*") has no space, so we strip just "Name:" and leave the "*".
-     * Returns "" when no prefix is present (plain, non-transcript characters).
+     * Returns null when no prefix is present (plain, non-transcript characters).
      */
-    private fun namePrefix(text: String, name: String): String {
+    private fun namePrefix(text: String, name: String): String? {
         val colon = "$name:"
         return when {
             text.startsWith("$colon ") -> "$colon "
             text.startsWith(colon) -> colon
-            else -> ""
+            else -> null
         }
     }
 
@@ -586,9 +655,10 @@ class ChatViewModel(
         val userId = if (ui >= 0) conv.messages[ui].id else null
         // Restore the prompt into the input without its transcript "Name:" prefix
         // (the prefix is re-applied on send), mirroring startEdit.
-        val restore = if (ui >= 0)
-            conv.messages[ui].text.removePrefix(namePrefix(conv.messages[ui].text, conv.userName))
-            else local.value.input
+        val restore = if (ui >= 0) {
+            val text = conv.messages[ui].text
+            text.removePrefix(namePrefix(text, conv.userName) ?: "")
+        } else local.value.input
         val updated = conv.copy(
             updatedAt = System.currentTimeMillis(),
             messages = conv.messages.filter { it.id != assistantId && it.id != userId },
@@ -628,17 +698,238 @@ class ChatViewModel(
     // ---- summarize ---------------------------------------------------------
 
     /** Compact the older messages into the conversation [summary] and lock them,
-     *  freeing context so the chat can continue. Runs in the background service. */
-    fun summarize() {
+     *  freeing context so the chat can continue. Runs in the background service. When
+     *  [includeCharacters], each cast member additionally gets its own independent state
+     *  update (one request per character, each writing only its own field) once the story
+     *  summary lands. */
+    fun summarize(includeCharacters: Boolean = false) {
         val conv = base ?: return
         if (isBusy() || local.value.impersonating) return
         if (!SummarizationConfig.canSummarize(conv.messages.size)) return
         local.update { it.copy(selectedMsgId = null) }
         SummarizationService.start(app, convId, conv.title)
+        if (includeCharacters) {
+            // Queue the per-character updates; they start when the story run reaches DONE
+            // (the observer below), so the fresh summary feeds each character's request.
+            val names = conv.cast.map { it.name }
+            if (names.isNotEmpty()) castSummarizeQueue = names
+        }
     }
+
+    /** Names waiting to be summarized after the story summary finishes; null when idle. */
+    private var castSummarizeQueue: List<String>? = null
 
     /** Consume the one-shot navigation flag once the screen has switched to details. */
     fun consumeSummarizeDone() = local.update { it.copy(summarizeDoneId = null) }
+
+    // ---- cast management ---------------------------------------------------
+
+    /** The primary character's per-conversation state entry, if any. */
+    private fun Conversation.primaryMember(): CastMember? =
+        cast.firstOrNull { it.name == characterName }
+
+    /** Add a self-contained (per-conversation) character to the cast. Deduped by name;
+     *  returns false when the name is already taken. */
+    fun addCastMember(name: String, context: String): Boolean {
+        val conv = base ?: return false
+        val cleanName = name.trim()
+        if (cleanName.isEmpty()) return false
+        if (conv.cast.any { it.name == cleanName } || cleanName == conv.characterName) return false
+        saveThen(conv.copy(
+            updatedAt = System.currentTimeMillis(),
+            cast = conv.cast + CastMember(cleanName, context.trim()),
+        ))
+        return true
+    }
+
+    /** Rename and/or re-persona a cast member. [newName] blank keeps the old name. */
+    fun updateCastMember(name: String, newName: String, context: String) {
+        val conv = base ?: return
+        val cleanName = newName.trim().ifEmpty { name }
+        if (cleanName == name && conv.cast.any { it.name == name }) {
+            saveThen(conv.copy(
+                updatedAt = System.currentTimeMillis(),
+                cast = conv.cast.map { if (it.name == name) it.copy(context = context.trim()) else it },
+            ))
+            return
+        }
+        if (conv.cast.any { it.name == cleanName }) return // name already taken
+        saveThen(conv.copy(
+            updatedAt = System.currentTimeMillis(),
+            cast = conv.cast.map { if (it.name == name) CastMember(cleanName, context.trim(), it.state, it.refImage) else it },
+        ))
+    }
+
+    /** Drop a member from the cast (the character library is untouched); its reference
+     *  image file is deleted too. */
+    fun removeCastMember(name: String) {
+        val conv = base ?: return
+        val member = conv.cast.firstOrNull { it.name == name } ?: return
+        saveThen(conv.copy(
+            updatedAt = System.currentTimeMillis(),
+            cast = conv.cast.filterNot { it.name == name },
+        ))
+        member.refImage?.let { att ->
+            viewModelScope.launch(Dispatchers.IO) { app.attachmentStore.delete(convId, listOf(att)) }
+        }
+    }
+
+    /** Manually edit a member's state text. */
+    fun setCastState(name: String, state: String) {
+        val conv = base ?: return
+        saveThen(conv.copy(
+            updatedAt = System.currentTimeMillis(),
+            cast = conv.cast.map { if (it.name == name) it.copy(state = state.trim()) else it },
+        ))
+    }
+
+    /** Import (downscale + copy) the picked image as a member's reference, replacing any
+     *  previous one. */
+    fun setRefImageFromUri(name: String, uri: Uri) {
+        viewModelScope.launch {
+            val imported = app.attachmentStore.importImage(convId, uri) ?: return@launch
+            val conv = base ?: return@launch
+            val member = conv.cast.firstOrNull { it.name == name } ?: return@launch
+            saveThen(conv.copy(
+                updatedAt = System.currentTimeMillis(),
+                cast = conv.cast.map { if (it.name == name) it.copy(refImage = imported) else it },
+            ))
+            member.refImage?.let { old ->
+                if (old.fileName != imported.fileName)
+                    launch(Dispatchers.IO) { app.attachmentStore.delete(convId, listOf(old)) }
+            }
+        }
+    }
+
+    /** Take a finished scene image in this conversation as the member's reference. The
+     *  bytes are copied so the member owns its own file (deleting the scene later can't
+     *  strip the reference). */
+    fun setRefImageFromScene(name: String, messageId: Long) {
+        val conv = base ?: return
+        val msg = conv.messages.firstOrNull { it.id == messageId } ?: return
+        val att = msg.attachments.firstOrNull() ?: return
+        viewModelScope.launch {
+            val copy = app.attachmentStore.copy(convId, att) ?: return@launch
+            val fresh = base ?: return@launch
+            val member = fresh.cast.firstOrNull { it.name == name } ?: return@launch
+            saveThen(fresh.copy(
+                updatedAt = System.currentTimeMillis(),
+                cast = fresh.cast.map { if (it.name == name) it.copy(refImage = copy) else it },
+            ))
+            member.refImage?.let { old ->
+                if (old.fileName != copy.fileName)
+                    launch(Dispatchers.IO) { app.attachmentStore.delete(convId, listOf(old)) }
+            }
+        }
+    }
+
+    /** Remove a member's reference image. */
+    fun clearRefImage(name: String) {
+        val conv = base ?: return
+        val member = conv.cast.firstOrNull { it.name == name } ?: return
+        saveThen(conv.copy(
+            updatedAt = System.currentTimeMillis(),
+            cast = conv.cast.map { if (it.name == name) it.copy(refImage = null) else it },
+        ))
+        member.refImage?.let { att ->
+            viewModelScope.launch(Dispatchers.IO) { app.attachmentStore.delete(convId, listOf(att)) }
+        }
+    }
+
+    /** Copy a per-conversation member into the shared character library (explicit export;
+     *  nothing syncs automatically). Returns the resolved library name. */
+    fun exportToCatalog(name: String): String? {
+        val conv = base ?: return null
+        val member = conv.cast.firstOrNull { it.name == name } ?: return null
+        viewModelScope.launch {
+            app.characterRepository.upsert(
+                originalName = null,
+                name = member.name,
+                context = member.context,
+                greeting = null,
+                description = "",
+                usesNamePrefixes = true,
+            )
+        }
+        return member.name
+    }
+
+    /** Pull a catalog character into this conversation's cast as a fresh per-conversation
+     *  member (name + persona copied; state starts blank). Returns false when the name is
+     *  already in the cast or is the primary. */
+    fun importFromCatalog(name: String): Boolean {
+        val conv = base ?: return false
+        val c = app.characterRepository.get(name) ?: return false
+        if (conv.cast.any { it.name == c.name } || c.name == conv.characterName) return false
+        saveThen(conv.copy(
+            updatedAt = System.currentTimeMillis(),
+            cast = conv.cast + CastMember(c.name, c.context),
+        ))
+        return true
+    }
+
+    /**
+     * Rewrite one member's state notes from the conversation so far — an independent LLM
+     * request that writes only that member's [CastMember.state]. Runs in the screen's scope
+     * (never the single-flight generation service, so it can't cancel an in-flight reply);
+     * at most one runs at a time, and a failure keeps the previous state.
+     */
+    fun updateCastState(name: String) {
+        if (castUpdate.value != null) return
+        val conv = base ?: return
+        if (conv.cast.none { it.name == name }) return
+        castUpdate.value = CastUpdate(name)
+        viewModelScope.launch {
+            runCastStateUpdate(conv, name)
+            // Continue with whatever is queued behind this one.
+            val next = castUpdate.value?.pending?.firstOrNull()
+            castUpdate.update { cu -> cu?.copy(name = next!!, pending = cu.pending.drop(1)) }
+            if (next != null) runCastStateUpdate(base ?: conv, next)
+        }
+    }
+
+    /** Queue [names] for sequential state updates starting now. */
+    private fun startCastUpdates(names: List<String>) {
+        if (names.isEmpty() || castUpdate.value != null) return
+        val head = names.first()
+        castUpdate.value = CastUpdate(head, names.drop(1))
+        viewModelScope.launch {
+            runCastStateUpdate(base ?: return@launch, head)
+            continueCastUpdates()
+        }
+    }
+
+    private fun continueCastUpdates() {
+        val next = castUpdate.value?.pending?.firstOrNull() ?: return
+        castUpdate.update { cu -> cu?.copy(name = next, pending = cu.pending.drop(1)) }
+        viewModelScope.launch {
+            runCastStateUpdate(base ?: return@launch, next)
+            continueCastUpdates()
+        }
+    }
+
+    private suspend fun runCastStateUpdate(conv: Conversation, name: String) {
+        val s = app.settingsRepository.current()
+        val request = ChatRequestBuilder.castStateUpdate(conv, name, s) { m ->
+            m.refImage?.let { listOfNotNull(app.attachmentStore.toContentPart(convId, it)) } ?: emptyList()
+        }
+        val sb = StringBuilder()
+        try {
+            app.llamaClient.streamChat(s.ip, s.port, request).collect { delta -> sb.append(delta) }
+        } catch (_: CancellationException) {
+            return // screen left or Stop pressed; keep the previous state
+        } catch (_: Exception) {
+            return // failure keeps the previous state; the queue continues
+        }
+        val state = stripThink(sb.toString()).trim()
+        if (state.isEmpty()) return
+        // Re-read so a concurrent edit isn't clobbered.
+        val fresh = repo.get(convId) ?: return
+        repo.save(fresh.copy(
+            updatedAt = System.currentTimeMillis(),
+            cast = fresh.cast.map { if (it.name == name) it.copy(state = state) else it },
+        ))
+    }
 
     // ---- scene images ------------------------------------------------------
 
@@ -694,8 +985,9 @@ class ChatViewModel(
     fun generateSceneFromText(prompt: String) {
         val conv = base ?: return
         // Drop the transcript "Name:" prefix — it's bookkeeping for the chat, not part
-        // of what should reach the image model.
-        val trimmed = namePrefix(prompt, conv.characterName).let { prompt.removePrefix(it) }.trim()
+        // of what should reach the image model. The speaker may be any cast member.
+        val trimmed = (speakerNames(conv).firstNotNullOfOrNull { namePrefix(prompt, it) } ?: "")
+            .let { prompt.removePrefix(it) }.trim()
         if (trimmed.isEmpty()) return
         val messageId = IdGen.next()
         val placeholder = ChatMessage(

@@ -67,6 +67,7 @@ class GenerationService : Service() {
                     includePartial = intent.getBooleanExtra(EXTRA_INCLUDE_PARTIAL, false),
                     forceContinue = intent.getBooleanExtra(EXTRA_FORCE_CONTINUE, false),
                     ignoreEos = intent.getBooleanExtra(EXTRA_IGNORE_EOS, false),
+                    speaker = intent.getStringExtra(EXTRA_SPEAKER).orEmpty(),
                 )
             }
             else -> finish()
@@ -82,6 +83,7 @@ class GenerationService : Service() {
         includePartial: Boolean,
         forceContinue: Boolean,
         ignoreEos: Boolean = false,
+        speaker: String = "",
     ) {
         if (convId < 0 || targetId < 0) {
             finish()
@@ -89,7 +91,7 @@ class GenerationService : Service() {
         }
         job?.cancel() // single-flight: a new request supersedes any in-flight one
         val launched = scope.launch {
-            generate(convId, targetId, includePartial, forceContinue, ignoreEos)
+            generate(convId, targetId, includePartial, forceContinue, ignoreEos, speaker)
         }
         job = launched
         launched.invokeOnCompletion {
@@ -105,6 +107,7 @@ class GenerationService : Service() {
         includePartial: Boolean,
         forceContinue: Boolean,
         ignoreEos: Boolean = false,
+        speaker: String = "",
     ) {
         val controller = app.generation
         val repo = app.conversationRepository
@@ -120,12 +123,23 @@ class GenerationService : Service() {
         // keep any trailing whitespace so appended tokens don't fuse onto the last word.
         val base = if (includePartial) conv.messages[idx].text else ""
         // The transcript "Name:" prefill isn't real content; strip it to tell a
-        // genuinely empty reply (model emitted nothing) from a real one.
-        val prefix = if (conv.character.usesNamePrefixes) "${conv.characterName}: " else ""
+        // genuinely empty reply (model emitted nothing) from a real one. In a
+        // multi-character chat an explicit speaker overrides the primary's name; blank
+        // keeps today's behavior (primary character).
+        val prefix = if (conv.character.usesNamePrefixes) {
+            (speaker.ifBlank { conv.characterName }).let { "$it: " }
+        } else ""
         val store = app.attachmentStore
-        val request = ChatRequestBuilder.reply(conv, idx, includePartial, forceContinue, s, ignoreEos) { m ->
-            m.attachments.mapNotNull { store.toContentPart(convId, it) }
-        }
+        val request = ChatRequestBuilder.reply(
+            conv = conv,
+            assistantIndex = idx,
+            includePartial = includePartial,
+            forceContinue = forceContinue,
+            s = s,
+            ignoreEos = ignoreEos,
+            attachmentPart = { m -> m.attachments.mapNotNull { store.toContentPart(convId, it) } },
+            speaker = speaker.ifBlank { null },
+        )
 
         val token = controller.begin(convId, targetId, base)
         try {
@@ -321,11 +335,14 @@ class GenerationService : Service() {
         private const val EXTRA_FORCE_CONTINUE = "forceContinue"
         private const val EXTRA_IGNORE_EOS = "ignoreEos"
         private const val EXTRA_TITLE = "title"
+        /** Multi-character chats: which cast member speaks this turn; "" = primary/auto. */
+        private const val EXTRA_SPEAKER = "speaker"
 
         private val PENDING_FLAGS =
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
 
-        /** Start (or replace) the foreground generation for [targetId] in [convId]. */
+        /** Start (or replace) the foreground generation for [targetId] in [convId].
+         *  [speaker] names the cast member who speaks this turn ("" = primary/auto). */
         fun start(
             context: Context,
             convId: Long,
@@ -334,6 +351,7 @@ class GenerationService : Service() {
             forceContinue: Boolean,
             title: String,
             ignoreEos: Boolean = false,
+            speaker: String = "",
         ) {
             val intent = Intent(context, GenerationService::class.java).apply {
                 action = ACTION_START
@@ -343,6 +361,7 @@ class GenerationService : Service() {
                 putExtra(EXTRA_FORCE_CONTINUE, forceContinue)
                 putExtra(EXTRA_TITLE, title)
                 putExtra(EXTRA_IGNORE_EOS, ignoreEos)
+                putExtra(EXTRA_SPEAKER, speaker)
             }
             ContextCompat.startForegroundService(context, intent)
         }
