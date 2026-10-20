@@ -881,10 +881,15 @@ class ChatViewModel(
         castUpdate.value = CastUpdate(name)
         viewModelScope.launch {
             runCastStateUpdate(conv, name)
-            // Continue with whatever is queued behind this one.
+            // Continue with whatever is queued behind this one; a single update from the
+            // button has no queue, so clear the banner and stop.
             val next = castUpdate.value?.pending?.firstOrNull()
-            castUpdate.update { cu -> cu?.copy(name = next!!, pending = cu.pending.drop(1)) }
-            if (next != null) runCastStateUpdate(base ?: conv, next)
+            if (next != null) {
+                castUpdate.update { cu -> cu?.copy(name = next, pending = cu.pending.drop(1)) }
+                runCastStateUpdate(base ?: conv, next)
+            } else {
+                castUpdate.value = null
+            }
         }
     }
 
