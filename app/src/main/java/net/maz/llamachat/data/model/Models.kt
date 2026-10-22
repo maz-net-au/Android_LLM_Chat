@@ -140,10 +140,6 @@ data class CastMember(
     /** Reference image for LLM state updates; null = none. Bytes live in the
      *  conversation's attachment dir like message attachments (see AttachmentStore). */
     val refImage: Attachment? = null,
-    /** ARGB of this member's message label/avatar colour; -1 = not set yet (the UI
-     *  assigns a distinct palette entry on first touch). Stored as Int so the blob
-     *  stays plain JSON. */
-    val colorArgb: Long = -1L,
 )
 
 /** A conversation and its messages. Mirrors the prototype's conversation object. */

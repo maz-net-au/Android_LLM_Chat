@@ -1,8 +1,6 @@
 package net.maz.llamachat.vm
 
 import android.net.Uri
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
@@ -40,7 +38,6 @@ import net.maz.llamachat.data.gen.SummaryPhase
 import net.maz.llamachat.data.gen.containsThink
 import net.maz.llamachat.data.gen.stripThink
 import net.maz.llamachat.data.model.Attachment
-import net.maz.llamachat.data.model.Catalog
 import net.maz.llamachat.data.model.CastMember
 import net.maz.llamachat.data.model.ChatMessage
 import net.maz.llamachat.data.model.Conversation
@@ -626,56 +623,6 @@ class ChatViewModel(
         }
     }
 
-    /**
-     * The cast member who spoke [m], read from its stored transcript prefix. Returns
-     * the primary's name for a blank (legacy/auto) speaker, or null when no known
-     * name prefixes the text — e.g. plain assistant-style chats with no "Name:" at all.
-     */
-    fun speakerOf(m: ChatMessage, conv: Conversation): String? =
-        if (m.role == Role.USER) null
-        else m.speaker.ifBlank { conv.characterName }
-            .takeIf { namePrefix(m.text, it) != null }
-
-    /** ARGB of the colour used for [name]'s message labels in this conversation:
-     *  a cast member's chosen colour, else the catalog character's, else the neutral
-     *  default. */
-    fun speakerColor(name: String, conv: Conversation): Color =
-        conv.cast.firstOrNull { it.name == name }?.colorArgb
-            ?.takeIf { it >= 0 }
-            ?.let { Color(it) }
-            ?: Catalog.character(name).color
-
-    /** The colour a fresh cast member gets: the first palette entry no current cast
-     *  member (or the primary character) is already using, so every voice reads
-     *  distinctly at a glance. */
-    fun nextCastColor(conv: Conversation): Color {
-        val taken = conv.cast.mapNotNull { it.colorArgb.takeIf { c -> c >= 0 } }.toSet() +
-            Catalog.character(conv.characterName).color.toArgb().toLong()
-        return Catalog.palette.firstOrNull { it.toArgb().toLong() !in taken } ?: Catalog.defaultColor
-    }
-
-    /** Set a member's message colour. */
-    fun setCastColor(name: String, color: Color) {
-        val conv = base ?: return
-        saveThen(conv.copy(
-            updatedAt = System.currentTimeMillis(),
-            cast = conv.cast.map { if (it.name == name) it.copy(colorArgb = color.toArgb().toLong()) else it },
-        ))
-    }
-
-    /** Auto-assign a colour to every member that doesn't have one yet, so labels and
-     *  avatars are distinct from the moment a cast gains its second member. */
-    private fun autoAssignCastColors(conv: Conversation): List<CastMember> {
-        var taken = conv.cast.mapNotNull { it.colorArgb.takeIf { c -> c >= 0 } }.toMutableSet()
-        return conv.cast.map { m ->
-            if (m.colorArgb < 0) {
-                val c = Catalog.palette.firstOrNull { it.toArgb().toLong() !in taken } ?: Catalog.defaultColor
-                taken.add(c.toArgb().toLong())
-                m.copy(colorArgb = c.toArgb().toLong())
-            } else m
-        }
-    }
-
     fun setEditText(v: String) = local.update { it.copy(editText = v) }
 
     fun saveEdit() {
@@ -790,9 +737,7 @@ class ChatViewModel(
         if (conv.cast.any { it.name == cleanName } || cleanName == conv.characterName) return false
         saveThen(conv.copy(
             updatedAt = System.currentTimeMillis(),
-            cast = autoAssignCastColors(conv).let { c ->
-                c + CastMember(cleanName, context.trim(), colorArgb = nextCastColor(conv).toArgb().toLong())
-            },
+            cast = conv.cast + CastMember(cleanName, context.trim()),
         ))
         return true
     }
@@ -811,9 +756,7 @@ class ChatViewModel(
         if (conv.cast.any { it.name == cleanName }) return // name already taken
         saveThen(conv.copy(
             updatedAt = System.currentTimeMillis(),
-            cast = conv.cast.map {
-                if (it.name == name) CastMember(cleanName, context.trim(), it.state, it.refImage, it.colorArgb) else it
-            },
+            cast = conv.cast.map { if (it.name == name) CastMember(cleanName, context.trim(), it.state, it.refImage) else it },
         ))
     }
 
@@ -920,7 +863,7 @@ class ChatViewModel(
         if (conv.cast.any { it.name == c.name } || c.name == conv.characterName) return false
         saveThen(conv.copy(
             updatedAt = System.currentTimeMillis(),
-            cast = autoAssignCastColors(conv) + CastMember(c.name, c.context, colorArgb = nextCastColor(conv).toArgb().toLong()),
+            cast = conv.cast + CastMember(c.name, c.context),
         ))
         return true
     }

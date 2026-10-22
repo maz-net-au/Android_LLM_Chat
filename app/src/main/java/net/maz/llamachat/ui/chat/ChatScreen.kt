@@ -426,7 +426,6 @@ fun ChatScreen(
                             message = message,
                             attachmentFiles = message.attachments.map { it to app.attachmentStore.fileFor(vm.convId, it) },
                             names = names,
-                            speakerColor = message.speakerLabel(names)?.let { vm.speakerColor(it, conv!!) } ?: DcColors.OnSurfaceFaint,
                             locked = message.locked,
                             editing = state.editingMsgId == message.id,
                             selected = state.selectedMsgId == message.id,
@@ -729,36 +728,21 @@ private fun ChoiceRow(label: String, detail: String, enabled: Boolean, onClick: 
 }
 
 /**
- * The leading "Name:" speaker prefix on [m], or null when none of the known names
- * prefixes it. Multi-character chats: try every known speaker, first match wins.
+ * The text shown in a bubble: the stored text minus the leading "Name:" speaker
+ * prefix. Display-only — the stored message keeps the prefix so future API turns
+ * still carry it.
  */
-private fun ChatMessage.namePrefix(names: List<String>): String? {
+private fun ChatMessage.displayText(names: List<String>): String {
     // Strip "Name:" with or without its trailing space — a model (or server) may emit
-    // an emote straight after the colon ("Name:*waves*").
+    // an emote straight after the colon ("Name:*waves*"), matching namePrefix in the VM.
+    // Multi-character chats: try every known speaker, first match wins.
     for (name in names) {
         val spaced = "$name: "
-        if (text.startsWith(spaced)) return spaced
+        if (text.startsWith(spaced)) return text.removePrefix(spaced)
         val bare = "$name:"
-        if (text.startsWith(bare)) return bare
+        if (text.startsWith(bare)) return text.removePrefix(bare)
     }
-    return null
-}
-
-/** The text shown in a bubble: the stored text minus its leading "Name:" prefix.
- *  Display-only — the stored message keeps the prefix so future API turns still carry it. */
-private fun ChatMessage.displayText(names: List<String>): String =
-    namePrefix(names)?.let { text.removePrefix(it) } ?: text
-
-/** The small label above a bubble naming who spoke it (the "Name" before the ":" in
- *  the stored transcript). [names] is the conversation's speaker list; user turns are
- *  labelled "You". Returns null when no known name prefixes the message — e.g. plain
- *  assistant-style chats where replies carry no "Name:" at all. */
-private fun ChatMessage.speakerLabel(names: List<String>): String? {
-    if (role == Role.USER) return "You"
-    val prefix = namePrefix(names) ?: return null
-    // The label is the name part of the prefix ("Name:" or "Name: ").
-    val name = prefix.dropLast(1).removeSuffix(" ")
-    return name.ifEmpty { null }
+    return text
 }
 
 @Composable
@@ -766,7 +750,6 @@ private fun MessageItem(
     message: ChatMessage,
     attachmentFiles: List<Pair<Attachment, File>>,
     names: List<String>,
-    speakerColor: Color,
     locked: Boolean,
     editing: Boolean,
     selected: Boolean,
@@ -797,11 +780,9 @@ private fun MessageItem(
             else Modifier.fillMaxWidth(0.85f).widthIn(max = 600.dp),
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
         ) {
-            val label = message.speakerLabel(names)
             if (editing) {
                 EditBox(editText, onEditTextChange, onSaveEdit, onCancelEdit)
             } else {
-                if (label != null) SpeakerLabel(label, speakerColor)
                 MessageBubble(message.displayText(names), attachmentFiles, isUser, streamingCaret, onTap)
                 if (!isUser && message.variantCount > 1) {
                     VariantNav(message, onPrevVariant, onNextVariant)
@@ -813,22 +794,6 @@ private fun MessageItem(
             }
         }
     }
-}
-
-/** Small name above a bubble telling who spoke it — the character's colour for
- *  assistant turns, neutral for the user's own "You". */
-@Composable
-private fun SpeakerLabel(name: String, color: Color) {
-    Text(
-        name,
-        fontSize = 10.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = 0.4.sp,
-        color = color,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.padding(bottom = 2.dp),
-    )
 }
 
 @Composable
