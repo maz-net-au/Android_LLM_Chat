@@ -3,6 +3,7 @@ package net.maz.llamachat.vm
 import android.net.Uri
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.ViewModel
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -638,84 +639,89 @@ class ChatViewModel(
         else m.speaker.ifBlank { conv.characterName }
             .takeIf { namePrefix(m.text, it) != null }
 
-    /** The bubble colours for [name]'s messages in this conversation: the cast
-     *  member's chosen palette pair when set, else a tint/inverse derived from the
-     *  catalog character's colour. */
-    fun speakerBubbleColors(name: String, conv: Conversation): BubbleColors {
-        val pick: Long? = conv.cast.firstOrNull { it.name == name }?.colorArgb?.takeIf { it >= 0 }
-        return if (pick != null) {
-            Catalog.palette.firstOrNull { it.first.value.toLong() == pick || it.second.value.toLong() == pick }
-                ?.let { BubbleColors(it.first, it.second) }
-                ?: BubbleColors.derive(Color(pick))
-        } else BubbleColors.derive(Catalog.character(name).color)
+    /** The (light, dark) bubble colours for [name]'s messages in this conversation:
+     *  the cast member's chosen colour when set, else the catalog character's. One
+     *  stored colour drives both themes — see [bubbleColors]. */
+    fun speakerBubbleColors(name: String, conv: Conversation): BubbleColors =
+        (conv.cast.firstOrNull { it.name == name }?.colorArgb
+            ?.takeIf { it >= 0 }
+            ?.let { Color(it) }
+            ?: Catalog.character(name).color).bubbleColors()
+
+    /** The colour a fresh cast member gets: the first palette entry no current cast
+     *  member (or the primary character) is already using, so every voice reads
+     *  distinctly at a glance. */
+    fun nextCastColor(conv: Conversation): Color {
+        val taken = conv.cast.mapNotNull { it.colorArgb.takeIf { c -> c >= 0 } }.toSet() +
+            Catalog.character(conv.characterName).color.toArgb().toLong()
+        return Catalog.palette.firstOrNull { it.toArgb().toLong() !in taken } ?: Catalog.defaultColor
     }
 
-    /** The palette pair a fresh cast member gets: the first entry no current cast
-     *  member (or the primary character's colour) is already using, so every voice
-     *  reads distinctly at a glance. */
-    fun nextCastColor(conv: Conversation): Pair<Color, Color> {
-        val taken = conv.cast.mapNotNull { it.colorArgb?.takeIf { c -> c >= 0 } }.toSet() +
-            Catalog.character(conv.characterName).color.value.toLong()
-        return Catalog.palette.firstOrNull { p ->
-            p.first.value.toLong() !in taken && p.second.value.toLong() !in taken
-        } ?: Catalog.defaultColor
-    }
-
-    /** Set a member's message colour to the palette pair containing [color] (either
-     *  its light or dark half) — one pick drives both themes. */
+    /** Set a member's message colour — the single pick from which both themes' bubble
+     *  colours are derived. */
     fun setCastColor(name: String, color: Color) {
         val conv = base ?: return
-        val argb = Catalog.palette.firstOrNull { p ->
-            p.first.value == color.value || p.second.value == color.value
-        }?.let { it.first.value.toLong() } ?: color.value.toLong()
         saveThen(conv.copy(
             updatedAt = System.currentTimeMillis(),
-            cast = conv.cast.map { if (it.name == name) it.copy(colorArgb = argb) else it },
+            cast = conv.cast.map { if (it.name == name) it.copy(colorArgb = color.toArgb().toLong()) else it },
         ))
     }
 
     /** Auto-assign a colour to every member that doesn't have one yet, so labels and
      *  avatars are distinct from the moment a cast gains its second member. */
     private fun autoAssignCastColors(conv: Conversation): List<CastMember> {
-        var taken = conv.cast.mapNotNull { it.colorArgb?.takeIf { c -> c >= 0 } }.toMutableSet()
+        var taken = conv.cast.mapNotNull { it.colorArgb.takeIf { c -> c >= 0 } }.toMutableSet()
         return conv.cast.map { m ->
             if (m.colorArgb < 0) {
-                val pair = nextCastColor(conv)
-                taken += pair.first.value.toLong()
-                taken += pair.second.value.toLong()
-                m.copy(colorArgb = pair.first.value.toLong())
+                val c = Catalog.palette.firstOrNull { it.toArgb().toLong() !in taken } ?: Catalog.defaultColor
+                taken.add(c.toArgb().toLong())
+                m.copy(colorArgb = c.toArgb().toLong())
             } else m
         }
     }
 
-    /** The four colours a speaker's bubble needs: background and text colour, each
-     *  for light and dark theme. A palette pick supplies both halves directly;
-     *  [derive] turns a single base colour (a catalog character) into the same shape —
-     *  a pale tint with dark text in light mode, its inverse with white text in dark. */
-    data class BubbleColors(
-        val light: Color,
-        val dark: Color,
-        val onLight: Color = Color(0xDE000000),
-        val onDark: Color = Color.White,
-    ) {
-        fun background(isDark: Boolean): Color = if (isDark) dark else light
-        fun text(isDark: Boolean): Color = if (isDark) onDark else onLight
+    /** Bubble colours derived from one chosen [base] colour: light mode gets a pale
+     *  tint of it (dark text), dark mode its inverse — the same hue at full strength,
+     *  white text. Swapping themes therefore never needs a second pick; a user who
+     *  dislikes the inversion can re-pick per conversation as before. */
+    fun Color.bubbleColors(): BubbleColors = BubbleColors(
+        light = lerp(Color.White, this, 0.24f),
+        dark = inverse(),
+        onLight = if (this.luminance() > 0.45f) Color(0xDE000000) else Color.White,
+        onDark = Color.White,
+    )
 
-        companion object {
-            fun derive(base: Color): BubbleColors = BubbleColors(
-                light = lerp(Color.White, base, 0.24f),
-                dark = bubbleInverse(base),
-            )
-        }
-    }
-
-    /** The inverse of this colour: each channel flipped around mid-gray, so the same
-     *  pick reads as a "dark" variant in dark mode without losing its hue. */
-    private fun Color.inverse(): Color = bubbleInverse(this)
+    /** The inverse of this colour: each channel flipped around mid-gray. A dark
+     *  purple becomes a light lavender and vice versa, so the same pick reads as a
+     *  "dark" variant in dark mode without losing its hue. */
+    fun Color.inverse(): Color =
+        Color((0xFF000000.toInt() or ((redInv() shl 16)) or (greenInv() shl 8) or blueInv()).toLong())
 
     private fun Color.redInv(): Int = 255 - ((this.red * 255).roundToInt())
     private fun Color.greenInv(): Int = 255 - ((this.green * 255).roundToInt())
     private fun Color.blueInv(): Int = 255 - ((this.blue * 255).roundToInt())
+
+    /** WCAG relative luminance (0 = black, 1 = white) — decides which text colour
+     *  sits on a tinted bubble. */
+    private fun Color.luminance(): Float {
+        fun chan(c: Float): Float {
+            val s = c / 255f
+            return if (s <= 0.03928f) s / 12.92f else ((s + 0.055f) / 1.055f).pow(2.4f)
+        }
+        return 0.2126f * chan(red) + 0.7152f * chan(green) + 0.0722f * chan(blue)
+    }
+
+    /** The four colours a speaker's bubble needs: background and text colour, each
+     *  for light and dark theme. */
+    data class BubbleColors(
+        val light: Color,
+        val dark: Color,
+        val onLight: Color,
+        val onDark: Color,
+    ) {
+        fun background(isDark: Boolean): Color = if (isDark) dark else light
+        fun text(isDark: Boolean): Color = if (isDark) onDark else onLight
+    }
 
     fun setEditText(v: String) = local.update { it.copy(editText = v) }
 
@@ -831,8 +837,9 @@ class ChatViewModel(
         if (conv.cast.any { it.name == cleanName } || cleanName == conv.characterName) return false
         saveThen(conv.copy(
             updatedAt = System.currentTimeMillis(),
-            cast = autoAssignCastColors(conv) +
-                CastMember(cleanName, context.trim(), colorArgb = nextCastColor(conv).first.value.toLong()),
+            cast = autoAssignCastColors(conv).let { c ->
+                c + CastMember(cleanName, context.trim(), colorArgb = nextCastColor(conv).toArgb().toLong())
+            },
         ))
         return true
     }
@@ -960,8 +967,7 @@ class ChatViewModel(
         if (conv.cast.any { it.name == c.name } || c.name == conv.characterName) return false
         saveThen(conv.copy(
             updatedAt = System.currentTimeMillis(),
-            cast = autoAssignCastColors(conv) +
-                CastMember(c.name, c.context, colorArgb = nextCastColor(conv).first.value.toLong()),
+            cast = autoAssignCastColors(conv) + CastMember(c.name, c.context, colorArgb = nextCastColor(conv).toArgb().toLong()),
         ))
         return true
     }
@@ -1280,9 +1286,3 @@ class ChatViewModel(
         }
     }
 }
-
-/** Invert a colour's channels around mid-gray (top-level so nested companions can call it). */
-private fun bubbleInverse(c: Color): Color =
-    Color((0xFF000000.toInt() or ((255 - ((c.red * 255).roundToInt())) shl 16) or
-            ((255 - ((c.green * 255).roundToInt())) shl 8) or
-            (255 - ((c.blue * 255).roundToInt()))).toLong())
