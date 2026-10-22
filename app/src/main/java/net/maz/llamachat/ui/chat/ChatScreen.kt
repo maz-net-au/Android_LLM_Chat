@@ -80,6 +80,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -125,6 +126,7 @@ import net.maz.llamachat.ui.components.Avatar
 import net.maz.llamachat.ui.components.DcAppBar
 import net.maz.llamachat.ui.components.MarkdownText
 import net.maz.llamachat.ui.theme.DcColors
+import net.maz.llamachat.ui.theme.LocalDcScheme
 import net.maz.llamachat.vm.ChatViewModel
 import java.io.File
 import kotlin.math.roundToInt
@@ -426,7 +428,7 @@ fun ChatScreen(
                             message = message,
                             attachmentFiles = message.attachments.map { it to app.attachmentStore.fileFor(vm.convId, it) },
                             names = names,
-                            speakerColor = message.speakerLabel(names)?.let { vm.speakerColor(it, conv!!) } ?: DcColors.OnSurfaceFaint,
+                            bubbleColors = message.speakerLabel(names)?.let { vm.speakerBubbleColors(it, conv!!) },
                             locked = message.locked,
                             editing = state.editingMsgId == message.id,
                             selected = state.selectedMsgId == message.id,
@@ -766,7 +768,7 @@ private fun MessageItem(
     message: ChatMessage,
     attachmentFiles: List<Pair<Attachment, File>>,
     names: List<String>,
-    speakerColor: Color,
+    bubbleColors: ChatViewModel.BubbleColors?,
     locked: Boolean,
     editing: Boolean,
     selected: Boolean,
@@ -798,11 +800,22 @@ private fun MessageItem(
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
         ) {
             val label = message.speakerLabel(names)
+            // A character's own bubble colour (both themes) when this turn carries a
+            // known speaker prefix; null otherwise — plain transparent assistant style.
+            val bubbles = if (isUser) null else bubbleColors
             if (editing) {
                 EditBox(editText, onEditTextChange, onSaveEdit, onCancelEdit)
             } else {
-                if (label != null) SpeakerLabel(label, speakerColor, isUser)
-                MessageBubble(message.displayText(names), attachmentFiles, isUser, streamingCaret, onTap)
+                if (label != null) SpeakerLabel(label)
+                MessageBubble(
+                    message.displayText(names),
+                    attachmentFiles,
+                    isUser,
+                    streamingCaret,
+                    onTap,
+                    bubbleBg = bubbles?.background(LocalDcScheme.current.isDark),
+                    onColor = bubbles?.text(LocalDcScheme.current.isDark),
+                )
                 if (!isUser && message.variantCount > 1) {
                     VariantNav(message, onPrevVariant, onNextVariant)
                 }
@@ -815,26 +828,19 @@ private fun MessageItem(
     }
 }
 
-/** Small name above a bubble telling who spoke it: a chip in the speaker's colour
- *  (white text — every palette entry is dark enough to carry it in both themes) for
- *  assistant turns, neutral-tinted for the user's own "You". */
+/** Small name above a bubble telling who spoke it. The bubble itself carries the
+ *  character's colour, so the label stays plain text in the speaker's colour. */
 @Composable
-private fun SpeakerLabel(name: String, color: Color, isUser: Boolean) {
+private fun SpeakerLabel(name: String) {
     Text(
         name,
         fontSize = 10.sp,
         fontWeight = FontWeight.SemiBold,
         letterSpacing = 0.4.sp,
-        color = if (isUser) DcColors.OnSurfaceMedium else Color.White,
+        color = DcColors.OnSurfaceMedium,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
-        modifier = Modifier
-            .background(
-                if (isUser) DcColors.SurfaceTint else color,
-                RoundedCornerShape(4.dp),
-            )
-            .padding(horizontal = 6.dp, vertical = 2.dp)
-            .padding(bottom = 3.dp),
+        modifier = Modifier.padding(bottom = 2.dp),
     )
 }
 
@@ -845,17 +851,26 @@ private fun MessageBubble(
     isUser: Boolean,
     streamingCaret: Boolean,
     onTap: () -> Unit,
+    bubbleBg: Color? = null,
+    onColor: Color? = null,
 ) {
     val shape = if (isUser) RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp) else RoundedCornerShape(0.dp)
-    val bg = if (isUser) DcColors.PrimaryContainer else Color.Transparent
+    // Assistant turns default to transparent; a character with a message colour gets a
+    // rounded bubble in it (light tint / dark inverse — see BubbleColors).
+    val bg = if (isUser) DcColors.PrimaryContainer else (bubbleBg ?: Color.Transparent)
+    val bubbleShape = if (bubbleBg != null && !isUser) RoundedCornerShape(12.dp) else shape
     // Only assistant replies carry <think> reasoning; user text is shown verbatim.
     val parsed = remember(text, isUser) {
         if (isUser) ThinkParts(hasThink = false, reasoning = "", answer = text, streaming = false)
         else parseThink(text)
     }
+    // When the bubble is tinted by a character colour, body text switches to a
+    // contrast-checked on-colour (dark text on the light tint, white on the dark
+    // inverse); MarkdownText's theme-fixed spans are overridden the same way.
+    val onColor = onColor?.let { LocalDcScheme.current.copy(mdBody = it) } ?: LocalDcScheme.current
     Column(
         modifier = Modifier
-            .background(bg, shape)
+            .background(bg, bubbleShape)
             .clickable(onClick = onTap)
             .padding(if (isUser) PaddingUser else PaddingAssistant),
     ) {
@@ -884,7 +899,9 @@ private fun MessageBubble(
             ThinkingSection(parsed.reasoning, animating = parsed.streaming && streamingCaret)
         }
         if (parsed.answer.isNotEmpty()) {
-            MarkdownText(parsed.answer)
+            CompositionLocalProvider(LocalDcScheme provides onColor) {
+                MarkdownText(parsed.answer)
+            }
         }
         // The pulsing "Thinking…" label already signals activity during the think
         // phase, so only show the caret once the answer is streaming.
