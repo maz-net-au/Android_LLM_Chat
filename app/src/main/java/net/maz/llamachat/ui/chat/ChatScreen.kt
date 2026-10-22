@@ -801,7 +801,7 @@ private fun MessageItem(
             if (editing) {
                 EditBox(editText, onEditTextChange, onSaveEdit, onCancelEdit)
             } else {
-                if (label != null) SpeakerLabel(label, speakerColor, isUser)
+                if (label != null) SpeakerLabel(label, speakerColor)
                 MessageBubble(message.displayText(names), attachmentFiles, isUser, streamingCaret, onTap)
                 if (!isUser && message.variantCount > 1) {
                     VariantNav(message, onPrevVariant, onNextVariant)
@@ -815,26 +815,19 @@ private fun MessageItem(
     }
 }
 
-/** Small name above a bubble telling who spoke it: a chip in the speaker's colour
- *  (white text — every palette entry is dark enough to carry it in both themes) for
- *  assistant turns, neutral-tinted for the user's own "You". */
+/** Small name above a bubble telling who spoke it — the character's colour for
+ *  assistant turns, neutral for the user's own "You". */
 @Composable
-private fun SpeakerLabel(name: String, color: Color, isUser: Boolean) {
+private fun SpeakerLabel(name: String, color: Color) {
     Text(
         name,
         fontSize = 10.sp,
         fontWeight = FontWeight.SemiBold,
         letterSpacing = 0.4.sp,
-        color = if (isUser) DcColors.OnSurfaceMedium else Color.White,
+        color = color,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
-        modifier = Modifier
-            .background(
-                if (isUser) DcColors.SurfaceTint else color,
-                RoundedCornerShape(4.dp),
-            )
-            .padding(horizontal = 6.dp, vertical = 2.dp)
-            .padding(bottom = 3.dp),
+        modifier = Modifier.padding(bottom = 2.dp),
     )
 }
 
