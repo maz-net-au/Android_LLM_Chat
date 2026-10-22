@@ -2,7 +2,6 @@ package net.maz.llamachat.data.model
 
 import androidx.compose.ui.graphics.Color
 import kotlinx.serialization.Serializable
-import net.maz.llamachat.ui.theme.DcBrand
 
 /**
  * A character defines the persona for a conversation: its [context] becomes the
@@ -180,9 +179,9 @@ object Catalog {
      *  character has been deleted. The live, user-editable list lives in
      *  [characters], kept up to date by CharacterRepository. */
     val builtInCharacters: List<Character> = listOf(
-        Character("Assistant", "You are a helpful, concise assistant.", null, "Helpful, concise general assistant.", DcBrand.Primary, usesNamePrefixes = false),
+        Character("Assistant", "You are a helpful, concise assistant.", null, "Helpful, concise general assistant.", Color(0xFF5E35B1), usesNamePrefixes = false),
         Character("Default", "", null, "Neutral. No system persona.", Color(0xFF7E57C2), usesNamePrefixes = false),
-        Character("Coding Helper", "You are a senior software engineer. Explain clearly and back up explanations with concise code examples.", null, "Senior engineer. Explains with code.", DcBrand.PrimaryDark, usesNamePrefixes = false),
+        Character("Coding Helper", "You are a senior software engineer. Explain clearly and back up explanations with concise code examples.", null, "Senior engineer. Explains with code.", Color(0xFF4527A0), usesNamePrefixes = false),
     )
 
     /** The live character list. Replaced by CharacterRepository as the user edits;
@@ -190,21 +189,37 @@ object Catalog {
     @Volatile
     var characters: List<Character> = builtInCharacters
 
-    /** Swatches offered in the character editor. Every entry is dark enough to
-     *  carry white avatar text/icons. */
-    val palette: List<Color> = listOf(
-        DcBrand.Primary, DcBrand.PrimaryDark,
-        Color(0xFF7E57C2), Color(0xFF8E24AA), Color(0xFF5C6BC0),
-        Color(0xFF3949AB), Color(0xFF1E88E5), Color(0xFF039BE5),
-        Color(0xFF00897B), Color(0xFF26A69A), Color(0xFF43A047),
-        Color(0xFF7CB342), Color(0xFFF9A825), Color(0xFFEF6C00),
-        Color(0xFFF4511E), Color(0xFFE53935), Color(0xFFD81B60),
-        Color(0xFFC2185B), Color(0xFF6D4C41), Color(0xFF546E7A),
+    /** Swatches offered in the character editor and cast screen: one pair of bubble
+     *  colours per entry — a pale tint for light mode (dark text) and its complement
+     *  for dark mode (white text). The same pick drives both themes, so there's a
+     *  single selection to make; re-pick per conversation if the inversion reads wrong. */
+    val palette: List<Pair<Color, Color>> = listOf(
+        // light tint / dark complement
+        Color(0xFFEDE7F6) to Color(0xFF3A2E5C),   // violet
+        Color(0xFFE8DEF8) to Color(0xFF4A3B6B),   // lavender
+        Color(0xFFD1C4E9) to Color(0xFF5E4B8B),   // iris
+        Color(0xFFD7CCF0) to Color(0xFF6B5CA8),   // periwinkle
+        Color(0xFFC5CAE9) to Color(0xFF3F4A8B),   // indigo
+        Color(0xFFBBDEFB) to Color(0xFF274B7A),   // cornflower
+        Color(0xFFB3E5FC) to Color(0xFF1B6E8C),   // sky
+        Color(0xFFB2EBF2) to Color(0xFF14697A),   // cyan
+        Color(0xFFB2DFDB) to Color(0xFF1B635A),   // teal
+        Color(0xFFC8E6C9) to Color(0xFF2E6B3F),   // green
+        Color(0xFFDCEDC8) to Color(0xFF4A6B27),   // olive
+        Color(0xFFFFF9C4) to Color(0xFF8A7A1B),   // gold
+        Color(0xFFFFF3E0) to Color(0xFF8C5A1B),   // amber
+        Color(0xFFFFE0B2) to Color(0xFF8C4A14),   // orange
+        Color(0xFFFFCCBC) to Color(0xFF8C3B2E),   // coral
+        Color(0xFFFFCDD2) to Color(0xFF8C2733),   // red
+        Color(0xFFF8BBD0) to Color(0xFF8C1B4A),   // rose
+        Color(0xFFE1BEE7) to Color(0xFF6B1B5C),   // magenta
+        Color(0xFFD7CCC8) to Color(0xFF5C4A3F),   // taupe
+        Color(0xFFCFD8DC) to Color(0xFF3F4E5C),   // slate
     )
 
     /** Starting colour for characters that arrive without one (imported, generated):
      *  it's settable afterwards in the editor like any other. */
-    val defaultColor: Color = palette.first()
+    val defaultColor: Pair<Color, Color> = palette.first()
 
     val presets: List<Preset> = listOf(
         Preset("Default", temperature = 0.7, topP = 0.9, topK = 20, repeatPenalty = 1.15),

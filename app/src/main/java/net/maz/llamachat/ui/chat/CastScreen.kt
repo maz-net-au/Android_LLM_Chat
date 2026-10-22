@@ -43,7 +43,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -52,7 +55,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -85,8 +87,16 @@ import java.io.File
  */
 @Composable
 fun CastScreen(vm: ChatViewModel, onBack: () -> Unit) {
+    // collectAsStateWithLifecycle applies distinctUntilChanged to the whole ChatUiState,
+    // and Room's invalidation flow can skip an emission when only a JSON blob column
+    // changed — a colour pick writes castJson (plus updatedAt), so the picker would never
+    // see its own change. Reading the conversation through a snapshotFlow makes every
+    // save a recomposition instead.
+    val conv by produceState(initialValue = vm.ui.value.conversation, "conv") {
+        value = vm.ui.value.conversation
+        snapshotFlow { vm.ui.value.conversation }.collectLatest { value = it }
+    }
     val state by vm.ui.collectAsStateWithLifecycle()
-    val conv = state.conversation
     val context = LocalContext.current
     val app = context.applicationContext as LlamaChatApp
 
@@ -173,7 +183,7 @@ fun CastScreen(vm: ChatViewModel, onBack: () -> Unit) {
                         member = primaryMember,
                         persona = character?.context.orEmpty(),
                         personaEditable = false,
-                        messageColor = vm.speakerBubbleColors(primaryName, conv!!).background(LocalDcScheme.current.isDark),
+                        messageColor = vm.speakerBubbleColors(primaryName, conv!!).light,
                         onMessageColorPick = { vm.setCastColor(primaryName, it) },
                         updating = state.updatingCastName == primaryName,
                         refFile = primaryMember?.refImage?.let { app.attachmentStore.fileFor(vm.convId, it) },
@@ -198,9 +208,9 @@ fun CastScreen(vm: ChatViewModel, onBack: () -> Unit) {
                     member = member,
                     persona = member.context,
                     personaEditable = true,
-                    messageColor = vm.speakerBubbleColors(member.name, conv!!).background(LocalDcScheme.current.isDark),
+                    messageColor = vm.speakerBubbleColors(member.name, conv!!).light,
                     onMessageColorPick = { vm.setCastColor(member.name, it) },
-                    avatarColor = catalogChar?.color ?: Catalog.defaultColor,
+                    avatarColor = catalogChar?.color ?: Catalog.defaultColor.first,
                     updating = state.updatingCastName == member.name,
                     refFile = member.refImage?.let { app.attachmentStore.fileFor(vm.convId, it) },
                     onPersonaChange = { vm.updateCastMember(member.name, member.name, it) },
@@ -317,7 +327,7 @@ private fun CastMemberCard(
     personaEditable: Boolean,
     messageColor: Color,
     onMessageColorPick: (Color) -> Unit,
-    avatarColor: Color = Catalog.defaultColor,
+    avatarColor: Color = Catalog.defaultColor.first,
     updating: Boolean,
     refFile: File?,
     onPersonaChange: (String) -> Unit,
@@ -399,7 +409,7 @@ private fun CastMemberCard(
             color = DcColors.Primary,
             modifier = Modifier.padding(top = 12.dp),
         )
-        ColorSwatchRow(selected = messageColor, onPick = onMessageColorPick)
+        ColorSwatchRow(selectedLight = messageColor, onPick = onMessageColorPick)
 
         // --- state -------------------------------------------------------------
         Row(
@@ -491,38 +501,30 @@ private fun CastMemberCard(
 
 // ---------------------------------------------------------------------------
 
-/** One row of the message-colour swatches: tap to pick, check marks the current one. */
+/** One row of the message-colour swatches: each shows the light and dark halves of a
+ *  palette pair; tap to pick, check marks the current one. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ColorSwatchRow(selected: Color, onPick: (Color) -> Unit) {
+private fun ColorSwatchRow(selectedLight: Color, onPick: (Color) -> Unit) {
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Catalog.palette.forEach { swatch ->
-            val isSelected = swatch.toArgb() == selected.toArgb()
-            Box(
+        Catalog.palette.forEach { (light, dark) ->
+            val isSelected = light.value == selectedLight.value
+            Row(
                 modifier = Modifier
-                    .size(30.dp)
                     .clip(CircleShape)
-                    .background(swatch)
                     .border(
                         width = if (isSelected) 2.5.dp else 0.dp,
                         color = if (isSelected) DcColors.OnSurface else Color.Transparent,
                         shape = CircleShape,
                     )
-                    .clickable { onPick(swatch) },
-                contentAlignment = Alignment.Center,
+                    .clickable { onPick(light) },
             ) {
-                if (isSelected) {
-                    Icon(
-                        Icons.Filled.Check,
-                        contentDescription = "Selected",
-                        tint = Color.White,
-                        modifier = Modifier.size(16.dp),
-                    )
-                }
+                Box(Modifier.size(width = 18.dp, height = 30.dp).background(light))
+                Box(Modifier.size(width = 18.dp, height = 30.dp).background(dark))
             }
         }
     }

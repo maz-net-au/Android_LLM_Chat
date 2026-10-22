@@ -79,7 +79,7 @@ fun CharacterEditScreen(
     var greeting by remember { mutableStateOf(existing?.greeting ?: "") }
     var context by remember { mutableStateOf(existing?.context ?: "") }
     var usesNamePrefixes by remember { mutableStateOf(existing?.usesNamePrefixes ?: true) }
-    var color by remember { mutableStateOf(existing?.color ?: Catalog.palette.first()) }
+    var color by remember { mutableStateOf(existing?.color ?: Catalog.defaultColor.first) }
     var showAdjust by remember { mutableStateOf(false) }
 
     val revise by vm.revise.collectAsState()
@@ -188,29 +188,20 @@ fun CharacterEditScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Catalog.palette.forEach { swatch ->
-                    val selected = swatch.toArgb() == color.toArgb()
-                    Box(
+                Catalog.palette.forEach { (light, dark) ->
+                    val selected = light.toArgb() == color.toArgb()
+                    Row(
                         modifier = Modifier
-                            .size(36.dp)
                             .clip(CircleShape)
-                            .background(swatch)
                             .border(
                                 width = if (selected) 3.dp else 0.dp,
                                 color = if (selected) DcColors.OnSurface else Color.Transparent,
                                 shape = CircleShape,
                             )
-                            .clickable { color = swatch },
-                        contentAlignment = Alignment.Center,
+                            .clickable { color = light },
                     ) {
-                        if (selected) {
-                            Icon(
-                                Icons.Filled.Check,
-                                contentDescription = "Selected",
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
+                        Box(Modifier.size(width = 22.dp, height = 36.dp).background(light))
+                        Box(Modifier.size(width = 22.dp, height = 36.dp).background(dark))
                     }
                 }
             }
