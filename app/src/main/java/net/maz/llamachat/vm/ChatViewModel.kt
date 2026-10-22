@@ -2,11 +2,8 @@ package net.maz.llamachat.vm
 
 import android.net.Uri
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.ViewModel
-import kotlin.math.pow
-import kotlin.math.roundToInt
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -639,14 +636,14 @@ class ChatViewModel(
         else m.speaker.ifBlank { conv.characterName }
             .takeIf { namePrefix(m.text, it) != null }
 
-    /** The (light, dark) bubble colours for [name]'s messages in this conversation:
-     *  the cast member's chosen colour when set, else the catalog character's. One
-     *  stored colour drives both themes — see [bubbleColors]. */
-    fun speakerBubbleColors(name: String, conv: Conversation): BubbleColors =
-        (conv.cast.firstOrNull { it.name == name }?.colorArgb
+    /** ARGB of the colour used for [name]'s message labels in this conversation:
+     *  a cast member's chosen colour, else the catalog character's, else the neutral
+     *  default. */
+    fun speakerColor(name: String, conv: Conversation): Color =
+        conv.cast.firstOrNull { it.name == name }?.colorArgb
             ?.takeIf { it >= 0 }
             ?.let { Color(it) }
-            ?: Catalog.character(name).color).bubbleColors()
+            ?: Catalog.character(name).color
 
     /** The colour a fresh cast member gets: the first palette entry no current cast
      *  member (or the primary character) is already using, so every voice reads
@@ -657,8 +654,7 @@ class ChatViewModel(
         return Catalog.palette.firstOrNull { it.toArgb().toLong() !in taken } ?: Catalog.defaultColor
     }
 
-    /** Set a member's message colour — the single pick from which both themes' bubble
-     *  colours are derived. */
+    /** Set a member's message colour. */
     fun setCastColor(name: String, color: Color) {
         val conv = base ?: return
         saveThen(conv.copy(
@@ -678,49 +674,6 @@ class ChatViewModel(
                 m.copy(colorArgb = c.toArgb().toLong())
             } else m
         }
-    }
-
-    /** Bubble colours derived from one chosen [base] colour: light mode gets a pale
-     *  tint of it (dark text), dark mode its inverse — the same hue at full strength,
-     *  white text. Swapping themes therefore never needs a second pick; a user who
-     *  dislikes the inversion can re-pick per conversation as before. */
-    fun Color.bubbleColors(): BubbleColors = BubbleColors(
-        light = lerp(Color.White, this, 0.24f),
-        dark = inverse(),
-        onLight = if (this.luminance() > 0.45f) Color(0xDE000000) else Color.White,
-        onDark = Color.White,
-    )
-
-    /** The inverse of this colour: each channel flipped around mid-gray. A dark
-     *  purple becomes a light lavender and vice versa, so the same pick reads as a
-     *  "dark" variant in dark mode without losing its hue. */
-    fun Color.inverse(): Color =
-        Color((0xFF000000.toInt() or ((redInv() shl 16)) or (greenInv() shl 8) or blueInv()).toLong())
-
-    private fun Color.redInv(): Int = 255 - ((this.red * 255).roundToInt())
-    private fun Color.greenInv(): Int = 255 - ((this.green * 255).roundToInt())
-    private fun Color.blueInv(): Int = 255 - ((this.blue * 255).roundToInt())
-
-    /** WCAG relative luminance (0 = black, 1 = white) — decides which text colour
-     *  sits on a tinted bubble. */
-    private fun Color.luminance(): Float {
-        fun chan(c: Float): Float {
-            val s = c / 255f
-            return if (s <= 0.03928f) s / 12.92f else ((s + 0.055f) / 1.055f).pow(2.4f)
-        }
-        return 0.2126f * chan(red) + 0.7152f * chan(green) + 0.0722f * chan(blue)
-    }
-
-    /** The four colours a speaker's bubble needs: background and text colour, each
-     *  for light and dark theme. */
-    data class BubbleColors(
-        val light: Color,
-        val dark: Color,
-        val onLight: Color,
-        val onDark: Color,
-    ) {
-        fun background(isDark: Boolean): Color = if (isDark) dark else light
-        fun text(isDark: Boolean): Color = if (isDark) onDark else onLight
     }
 
     fun setEditText(v: String) = local.update { it.copy(editText = v) }

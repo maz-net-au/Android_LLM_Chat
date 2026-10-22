@@ -72,7 +72,6 @@ import net.maz.llamachat.ui.components.Avatar
 import net.maz.llamachat.ui.components.DcAppBar
 import net.maz.llamachat.ui.components.DcTextField
 import net.maz.llamachat.ui.theme.DcColors
-import net.maz.llamachat.ui.theme.LocalDcScheme
 import net.maz.llamachat.vm.ChatViewModel
 import java.io.File
 
@@ -173,7 +172,7 @@ fun CastScreen(vm: ChatViewModel, onBack: () -> Unit) {
                         member = primaryMember,
                         persona = character?.context.orEmpty(),
                         personaEditable = false,
-                        messageColor = vm.speakerBubbleColors(primaryName, conv!!).background(LocalDcScheme.current.isDark),
+                        messageColor = vm.speakerColor(primaryName, conv!!),
                         onMessageColorPick = { vm.setCastColor(primaryName, it) },
                         updating = state.updatingCastName == primaryName,
                         refFile = primaryMember?.refImage?.let { app.attachmentStore.fileFor(vm.convId, it) },
@@ -198,7 +197,7 @@ fun CastScreen(vm: ChatViewModel, onBack: () -> Unit) {
                     member = member,
                     persona = member.context,
                     personaEditable = true,
-                    messageColor = vm.speakerBubbleColors(member.name, conv!!).background(LocalDcScheme.current.isDark),
+                    messageColor = vm.speakerColor(member.name, conv!!),
                     onMessageColorPick = { vm.setCastColor(member.name, it) },
                     avatarColor = catalogChar?.color ?: Catalog.defaultColor,
                     updating = state.updatingCastName == member.name,
