@@ -3,7 +3,6 @@ package net.maz.llamachat.vm
 import android.net.Uri
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
-import net.maz.llamachat.ui.components.bubbleInverse
 import androidx.lifecycle.ViewModel
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -1282,3 +1281,8 @@ class ChatViewModel(
     }
 }
 
+/** Invert a colour's channels around mid-gray (top-level so nested companions can call it). */
+private fun bubbleInverse(c: Color): Color =
+    Color((0xFF000000.toInt() or ((255 - ((c.red * 255).roundToInt())) shl 16) or
+            ((255 - ((c.green * 255).roundToInt())) shl 8) or
+            (255 - ((c.blue * 255).roundToInt()))).toLong())

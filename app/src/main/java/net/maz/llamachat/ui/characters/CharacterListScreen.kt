@@ -62,7 +62,6 @@ fun CharacterListScreen(
     onEdit: (String) -> Unit,
     onCreate: () -> Unit,
     onGenerate: () -> Unit,
-    onDelete: (String) -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val characters by vm.characters.collectAsStateWithLifecycle()
@@ -132,7 +131,7 @@ fun CharacterListScreen(
                             pendingExport = c.name
                             exportLauncher.launch("${c.name}.yaml")
                         },
-                        onDelete = { confirmDelete = c.name; onDelete(c.name) },
+                        onDelete = { confirmDelete = c.name },
                     )
                     HorizontalDivider(color = DcColors.Divider)
                 }

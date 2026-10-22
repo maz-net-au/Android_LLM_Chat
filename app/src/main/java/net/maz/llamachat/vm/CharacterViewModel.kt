@@ -1,7 +1,6 @@
 package net.maz.llamachat.vm
 
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
@@ -14,10 +13,8 @@ import net.maz.llamachat.LlamaChatApp
 import net.maz.llamachat.data.CharacterRepository
 import net.maz.llamachat.data.SettingsRepository
 import net.maz.llamachat.data.gen.CharacterGenerator
-import net.maz.llamachat.data.model.Catalog
 import net.maz.llamachat.data.model.Character
 import net.maz.llamachat.data.net.LlamaClient
-import net.maz.llamachat.ui.components.bubbleInverse
 
 /** Progress of an in-place "adjust the context with the LLM" request. */
 data class ReviseUiState(
@@ -41,14 +38,6 @@ class CharacterViewModel(
     private var reviseJob: Job? = null
 
     fun get(name: String): Character? = repo.get(name)
-
-    /** The palette pair a stored colour belongs to, or the tint/inverse derived from it.
-     *  Characters persisted before the two-tone palette carry saturated fills that no
-     *  swatch matches; deriving keeps their avatar and bubbles reading correctly in
-     *  both themes instead of rendering white-on-white. */
-    fun resolveColor(color: Color): Pair<Color, Color> =
-        Catalog.palette.firstOrNull { it.first.value == color.value || it.second.value == color.value }
-            ?: lerp(Color.White, color, 0.24f) to bubbleInverse(color)
 
     /** Create or update a character. [originalName] is null when creating. */
     fun save(

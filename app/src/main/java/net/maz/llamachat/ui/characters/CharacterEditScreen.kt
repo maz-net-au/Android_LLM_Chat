@@ -49,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -73,14 +74,12 @@ fun CharacterEditScreen(
 ) {
     val existing = remember(editName) { editName?.let { vm.get(it) } }
 
-    // The pick is the palette's light tint; its dark complement comes along for free.
-    var colorPair by remember { mutableStateOf(existing?.color?.let(vm::resolveColor) ?: Catalog.defaultColor) }
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var description by remember { mutableStateOf(existing?.description ?: "") }
     var greeting by remember { mutableStateOf(existing?.greeting ?: "") }
     var context by remember { mutableStateOf(existing?.context ?: "") }
     var usesNamePrefixes by remember { mutableStateOf(existing?.usesNamePrefixes ?: true) }
-    val color = colorPair.first
+    var color by remember { mutableStateOf(existing?.color ?: Catalog.defaultColor.first) }
     var showAdjust by remember { mutableStateOf(false) }
 
     val revise by vm.revise.collectAsState()
@@ -190,7 +189,7 @@ fun CharacterEditScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Catalog.palette.forEach { (light, dark) ->
-                    val selected = light.value == color.value
+                    val selected = light.toArgb() == color.toArgb()
                     Row(
                         modifier = Modifier
                             .clip(CircleShape)
@@ -199,7 +198,7 @@ fun CharacterEditScreen(
                                 color = if (selected) DcColors.OnSurface else Color.Transparent,
                                 shape = CircleShape,
                             )
-                            .clickable { colorPair = light to dark },
+                            .clickable { color = light },
                     ) {
                         Box(Modifier.size(width = 22.dp, height = 36.dp).background(light))
                         Box(Modifier.size(width = 22.dp, height = 36.dp).background(dark))
