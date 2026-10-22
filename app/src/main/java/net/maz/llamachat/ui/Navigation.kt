@@ -261,6 +261,7 @@ fun LlamaChatNavHost() {
                 onEdit = { name -> navController.navigate(Routes.editCharacter(name)) },
                 onCreate = { navController.navigate(Routes.editCharacter()) },
                 onGenerate = { navController.navigate(Routes.CHARACTER_GENERATE) },
+                onDelete = { name -> vm.delete(name) },
                 onOpenSettings = openSettings,
             )
         }
