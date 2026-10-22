@@ -6,14 +6,17 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,6 +27,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MoreVert
@@ -46,7 +50,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -166,6 +172,8 @@ fun CastScreen(vm: ChatViewModel, onBack: () -> Unit) {
                         member = primaryMember,
                         persona = character?.context.orEmpty(),
                         personaEditable = false,
+                        messageColor = vm.speakerColor(primaryName, conv!!),
+                        onMessageColorPick = { vm.setCastColor(primaryName, it) },
                         updating = state.updatingCastName == primaryName,
                         refFile = primaryMember?.refImage?.let { app.attachmentStore.fileFor(vm.convId, it) },
                         onPersonaChange = {},
@@ -189,6 +197,8 @@ fun CastScreen(vm: ChatViewModel, onBack: () -> Unit) {
                     member = member,
                     persona = member.context,
                     personaEditable = true,
+                    messageColor = vm.speakerColor(member.name, conv!!),
+                    onMessageColorPick = { vm.setCastColor(member.name, it) },
                     avatarColor = catalogChar?.color ?: Catalog.defaultColor,
                     updating = state.updatingCastName == member.name,
                     refFile = member.refImage?.let { app.attachmentStore.fileFor(vm.convId, it) },
@@ -304,6 +314,8 @@ private fun CastMemberCard(
     member: CastMember?,
     persona: String,
     personaEditable: Boolean,
+    messageColor: Color,
+    onMessageColorPick: (Color) -> Unit,
     avatarColor: Color = Catalog.defaultColor,
     updating: Boolean,
     refFile: File?,
@@ -377,6 +389,16 @@ private fun CastMemberCard(
                 modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
             )
         }
+
+        // --- message colour ----------------------------------------------------
+        Text(
+            "Message colour",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = DcColors.Primary,
+            modifier = Modifier.padding(top = 12.dp),
+        )
+        ColorSwatchRow(selected = messageColor, onPick = onMessageColorPick)
 
         // --- state -------------------------------------------------------------
         Row(
@@ -467,6 +489,43 @@ private fun CastMemberCard(
 }
 
 // ---------------------------------------------------------------------------
+
+/** One row of the message-colour swatches: tap to pick, check marks the current one. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ColorSwatchRow(selected: Color, onPick: (Color) -> Unit) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Catalog.palette.forEach { swatch ->
+            val isSelected = swatch.toArgb() == selected.toArgb()
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .clip(CircleShape)
+                    .background(swatch)
+                    .border(
+                        width = if (isSelected) 2.5.dp else 0.dp,
+                        color = if (isSelected) DcColors.OnSurface else Color.Transparent,
+                        shape = CircleShape,
+                    )
+                    .clickable { onPick(swatch) },
+                contentAlignment = Alignment.Center,
+            ) {
+                if (isSelected) {
+                    Icon(
+                        Icons.Filled.Check,
+                        contentDescription = "Selected",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            }
+        }
+    }
+}
 
 /** Name + persona for a fresh per-conversation member. */
 @Composable
